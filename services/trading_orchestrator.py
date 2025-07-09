@@ -13,10 +13,13 @@ import json
 from concurrent.futures import ThreadPoolExecutor
 import threading
 
+from metaapi_integration.strategies.forex_strategy import ForexStrategy
 from services.user_service import user_service, User
 from services.multi_user_bot import multi_user_bot
 from db.multi_user_db import multi_user_db, UserTrade
 from models.models import Signal
+from strategy.strategies.bollinger_strategy import BollingerStrategy
+from strategy.strategies.macd_strategy import MACDStrategy
 from strategy.strategies.rsi_ema_strategy import RSIEMAStrategy
 from strategy.strategies.strategy import Strategy
 
@@ -169,7 +172,16 @@ class StrategyFactory:
 
     STRATEGIES = {
         "RSI_EMA": RSIEMAStrategy,
-        # Add more strategies as needed
+        "MACD": "MACDStrategy",
+        "BOLLINGER": "BollingerStrategy",
+        "FOREX": "ForexStrategy",
+    }
+
+    STRATEGY_DESCRIPTIONS = {
+        "RSI_EMA": "RSI + EMA - Combines RSI oversold/overbought levels with EMA trend confirmation",
+        "MACD": "MACD Strategy - Uses MACD crossovers and momentum for signal generation",
+        "BOLLINGER": "Bollinger Bands - Mean reversion and breakout strategy using Bollinger Bands",
+        "FOREX": "Forex Strategy - Specialized strategy for forex pairs with spread filtering",
     }
 
     @classmethod
@@ -179,8 +191,27 @@ class StrategyFactory:
         if not strategy_class:
             # Default to RSI_EMA
             strategy_class = RSIEMAStrategy
+        elif isinstance(strategy_class, str):
+            # Import strategy classes dynamically
+            if strategy_class == "MACDStrategy":
+                from strategy.strategies.macd_strategy import MACDStrategy
+
+                strategy_class = MACDStrategy
+            elif strategy_class == "BollingerStrategy":
+                from strategy.strategies.bollinger_strategy import BollingerStrategy
+
+                strategy_class = BollingerStrategy
+            elif strategy_class == "ForexStrategy":
+                from metaapi_integration.strategies.forex_strategy import ForexStrategy
+
+                strategy_class = ForexStrategy
 
         return strategy_class()
+
+    @classmethod
+    def get_available_strategies(cls) -> Dict[str, str]:
+        """Get list of available strategies with descriptions"""
+        return cls.STRATEGY_DESCRIPTIONS
 
 
 class TradingOrchestrator:
@@ -256,7 +287,7 @@ class TradingOrchestrator:
                 settings = await user_service.get_user_settings(user_id)
 
             # Create strategy instance
-            strategy_name = settings.strategy
+            strategy_name = getattr(settings, "trading_strategy", "RSI_EMA")
             strategy = StrategyFactory.create_strategy(strategy_name, settings.__dict__)
 
             # Create risk manager
@@ -511,9 +542,10 @@ class TradingOrchestrator:
                 session.settings = settings.__dict__
 
                 # Update strategy if changed
-                if settings.strategy != session.strategy.__class__.__name__:
+                current_strategy = getattr(settings, "trading_strategy", "RSI_EMA")
+                if current_strategy != session.strategy.__class__.__name__:
                     session.strategy = StrategyFactory.create_strategy(
-                        settings.strategy, settings.__dict__
+                        current_strategy, settings.__dict__
                     )
 
                 # Update risk manager

@@ -1,0 +1,127 @@
+# Development Requirements for Trading Bot
+# Optimized for Python 3.12.3
+
+# Core Bot Framework
+python-telegram-bot==20.7
+python-dotenv==1.0.0
+
+# Data Processing & Analysis
+pandas==2.2.0
+numpy==1.26.3
+pandas-ta==0.3.14b0
+
+# Async Programming
+aiohttp==3.9.3
+aiosqlite==0.20.0
+asyncio-throttle==1.0.2
+
+# Trading & Exchange APIs
+ccxt>=4.1.0,<5.0.0
+metaapi-cloud-sdk>=27.0.0,<29.0.0
+
+# Technical Analysis (Python 3.12 compatible)
+TA-Lib==0.4.28
+
+# Development & Testing
+pytest>=7.4.0,<9.0.0
+pytest-asyncio>=0.21.0,<1.0.0
+
+# Code Quality Tools
+black==24.2.0
+flake8==7.0.0
+isort==5.13.2
+
+# Utilities
+requests==2.31.0
+python-dateutil==2.8.2
+
+# JSON Processing (Python 3.12 optimized)
+orjson==3.9.15
+
+# Environment Management
+pyyaml==6.0.1
+
+# HTTP Client
+httpx==0.26.0
+
+# Logging & Debugging
+rich==13.7.0
+structlog==24.1.0
+
+# Math & Statistics
+scipy==1.12.0
+
+# Development Convenience
+ipython==8.21.0
+jupyter==1.0.0
+notebook==7.1.0
+
+# Performance Monitoring
+psutil==5.9.8
+
+# Database (Python 3.12 compatible)
+asyncpg==0.29.0
+
+# WebSocket support
+websockets==12.0
+
+# Financial data
+yfinance==0.2.18
+
+# Validation (Python 3.12 optimized)
+pydantic==2.6.1
+
+# Time utilities
+pytz==2024.1
+
+# CLI tools
+click==8.1.7
+typer==0.9.0
+
+# Type checking (Python 3.12 compatible)
+mypy==1.8.0
+types-requests==2.31.0.20240218
+
+# Additional development tools
+pre-commit==3.6.2
+coverage==7.4.1
+pytest-cov==4.1.0
+
+# Jupyter extensions
+jupyterlab==4.1.2
+ipywidgets==8.1.2
+
+# Data visualization
+matplotlib==3.8.3
+seaborn==0.13.2
+plotly==5.18.0
+
+# Memory profiling
+memory-profiler==0.61.0
+
+# Environment debugging
+python-decouple==3.8
+
+# Fast JSON parsing
+ujson==5.9.0
+
+# Better datetime handling
+pendulum==3.0.0
+
+# Configuration management
+configparser==6.0.0
+
+# Crypto utilities
+cryptography==42.0.2
+
+# Network utilities
+dnspython==2.6.1
+
+# File system utilities
+watchdog==4.0.0
+
+# Progress bars
+tqdm==4.66.2
+
+# Better error handling
+sentry-sdk==1.40.6 

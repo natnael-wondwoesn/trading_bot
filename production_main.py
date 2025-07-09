@@ -23,11 +23,14 @@ from services.monitoring_service import monitoring_service
 from db.multi_user_db import multi_user_db
 
 # Configure logging
+log_dir = os.getenv("LOG_DIR", "./logs")
+os.makedirs(log_dir, exist_ok=True)
+
 logging.basicConfig(
     level=getattr(logging, os.getenv("LOG_LEVEL", "INFO")),
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     handlers=[
-        logging.FileHandler("/app/logs/trading_service.log"),
+        logging.FileHandler(os.path.join(log_dir, "trading_service.log")),
         logging.StreamHandler(sys.stdout),
     ],
 )
@@ -48,7 +51,7 @@ class ProductionTradingService:
             "telegram_bot_token": os.getenv("TELEGRAM_BOT_TOKEN"),
             "webhook_url": os.getenv("WEBHOOK_URL"),
             "max_concurrent_users": int(os.getenv("MAX_CONCURRENT_USERS", 1000)),
-            "database_url": os.getenv("DATABASE_URL", "/app/data/trading_service.db"),
+            "database_url": os.getenv("DATABASE_URL", "./data/trading_service.db"),
             "redis_url": os.getenv("REDIS_URL", "redis://localhost:6379/0"),
             "log_level": os.getenv("LOG_LEVEL", "INFO"),
         }
@@ -152,40 +155,40 @@ class ProductionTradingService:
 
     async def start_all_services(self):
         """Start all services in the correct order"""
-        logger.info("🚀 Starting Multi-User Trading Service...")
+        logger.info("Starting Multi-User Trading Service...")
         self.startup_time = datetime.now()
 
         try:
             # 1. Initialize database first
-            logger.info("1️⃣ Initializing database...")
+            logger.info("Step 1: Initializing database...")
             await multi_user_db.initialize()
 
             # 2. Initialize user service
-            logger.info("2️⃣ Starting user service...")
+            logger.info("Step 2: Starting user service...")
             await user_service.initialize()
 
             # 3. Initialize trading orchestrator
-            logger.info("3️⃣ Starting trading orchestrator...")
+            logger.info("Step 3: Starting trading orchestrator...")
             await trading_orchestrator.initialize()
 
             # 4. Initialize monitoring service
-            logger.info("4️⃣ Starting monitoring service...")
+            logger.info("Step 4: Starting monitoring service...")
             await monitoring_service.start()
 
             # 5. Initialize and start Telegram bot
-            logger.info("5️⃣ Starting Telegram bot...")
+            logger.info("Step 5: Starting Telegram bot...")
             bot = MultiUserTradingBot(self.config["telegram_bot_token"])
             bot_app = await bot.start()
             self.services["bot"] = bot
             self.services["bot_app"] = bot_app
 
             # 6. Start background tasks
-            logger.info("6️⃣ Starting background tasks...")
+            logger.info("Step 6: Starting background tasks...")
             asyncio.create_task(self._market_data_simulation())
             asyncio.create_task(self._periodic_maintenance())
 
             self.running = True
-            logger.info("✅ All services started successfully!")
+            logger.info("All services started successfully!")
 
             # Log startup metrics
             await multi_user_db.log_system_metric("service_restart", 1)
@@ -194,13 +197,13 @@ class ProductionTradingService:
             )
 
         except Exception as e:
-            logger.error(f"❌ Failed to start services: {e}")
+            logger.error(f"Failed to start services: {e}")
             await self.shutdown_all_services()
             raise
 
     async def shutdown_all_services(self):
         """Gracefully shutdown all services"""
-        logger.info("🔄 Shutting down services...")
+        logger.info("Shutting down services...")
         self.running = False
 
         try:
@@ -218,7 +221,7 @@ class ProductionTradingService:
             # Log shutdown
             await multi_user_db.log_system_metric("service_shutdown", 1)
 
-            logger.info("✅ All services stopped gracefully")
+            logger.info("All services stopped gracefully")
 
         except Exception as e:
             logger.error(f"❌ Error during shutdown: {e}")
@@ -319,8 +322,8 @@ async def main():
     """Main entry point"""
     try:
         # Create data and logs directories
-        Path("/app/data").mkdir(exist_ok=True)
-        Path("/app/logs").mkdir(exist_ok=True)
+        Path("./data").mkdir(exist_ok=True)
+        Path("./logs").mkdir(exist_ok=True)
 
         # Initialize service
         service = ProductionTradingService()

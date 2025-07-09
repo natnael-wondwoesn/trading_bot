@@ -387,6 +387,111 @@ class UserService:
 
         return activity
 
+    async def get_user_performance(self, user_id: int, days: int = 30) -> Dict:
+        """Get user performance data"""
+        try:
+            # Get performance data from database
+            performance_records = await multi_user_db.get_user_performance(
+                user_id, days=days
+            )
+
+            if not performance_records:
+                # Return default empty performance data
+                return {
+                    "total_pnl": 0.0,
+                    "total_profit": 0.0,
+                    "total_loss": 0.0,
+                    "total_trades": 0,
+                    "winning_trades": 0,
+                    "losing_trades": 0,
+                    "win_rate": 0.0,
+                    "avg_trade_size": 0.0,
+                    "best_trade": 0.0,
+                    "worst_trade": 0.0,
+                    "daily_pnl": 0.0,
+                    "weekly_pnl": 0.0,
+                    "monthly_pnl": 0.0,
+                    "period_start": None,
+                    "period_end": datetime.now().strftime("%Y-%m-%d"),
+                }
+
+            # Calculate aggregated performance metrics
+            total_pnl = sum(record.total_pnl for record in performance_records)
+            total_trades = sum(record.total_trades for record in performance_records)
+            avg_win_rate = sum(record.win_rate for record in performance_records) / len(
+                performance_records
+            )
+
+            # Get recent performance
+            today_pnl = performance_records[-1].total_pnl if performance_records else 0
+            week_pnl = (
+                sum(record.total_pnl for record in performance_records[-7:])
+                if len(performance_records) >= 7
+                else total_pnl
+            )
+            month_pnl = (
+                sum(record.total_pnl for record in performance_records[-30:])
+                if len(performance_records) >= 30
+                else total_pnl
+            )
+
+            return {
+                "total_pnl": total_pnl,
+                "total_profit": max(0, total_pnl),
+                "total_loss": min(0, total_pnl),
+                "total_trades": total_trades,
+                "winning_trades": (
+                    int(total_trades * avg_win_rate) if total_trades > 0 else 0
+                ),
+                "losing_trades": (
+                    total_trades - int(total_trades * avg_win_rate)
+                    if total_trades > 0
+                    else 0
+                ),
+                "win_rate": avg_win_rate,
+                "avg_trade_size": total_pnl / total_trades if total_trades > 0 else 0,
+                "best_trade": max(
+                    (record.total_pnl for record in performance_records), default=0
+                ),
+                "worst_trade": min(
+                    (record.total_pnl for record in performance_records), default=0
+                ),
+                "daily_pnl": today_pnl,
+                "weekly_pnl": week_pnl,
+                "monthly_pnl": month_pnl,
+                "period_start": (
+                    performance_records[0].date.strftime("%Y-%m-%d")
+                    if performance_records
+                    else None
+                ),
+                "period_end": (
+                    performance_records[-1].date.strftime("%Y-%m-%d")
+                    if performance_records
+                    else None
+                ),
+            }
+
+        except Exception as e:
+            logger.error(f"Error getting user performance for user {user_id}: {e}")
+            # Return empty performance data on error
+            return {
+                "total_pnl": 0.0,
+                "total_profit": 0.0,
+                "total_loss": 0.0,
+                "total_trades": 0,
+                "winning_trades": 0,
+                "losing_trades": 0,
+                "win_rate": 0.0,
+                "avg_trade_size": 0.0,
+                "best_trade": 0.0,
+                "worst_trade": 0.0,
+                "daily_pnl": 0.0,
+                "weekly_pnl": 0.0,
+                "monthly_pnl": 0.0,
+                "period_start": None,
+                "period_end": datetime.now().strftime("%Y-%m-%d"),
+            }
+
     # Admin Functions
     async def get_system_overview(self) -> Dict:
         """Get system-wide overview (admin function)"""

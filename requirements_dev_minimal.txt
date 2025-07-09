@@ -1,0 +1,35 @@
+# Minimal Development Requirements - Conflict Free
+# Essential packages only for Python 3.12.3
+
+# Core Bot Framework (let it manage its own dependencies)
+python-telegram-bot
+python-dotenv
+
+# Data Processing
+pandas
+numpy
+pandas-ta
+
+# Trading APIs (install separately if needed)
+ccxt
+
+# Development Tools
+pytest
+black
+flake8
+isort
+
+# Utilities
+requests
+ipython
+rich
+
+# Performance
+psutil
+
+# JSON & Config
+pyyaml
+
+# Data Visualization
+matplotlib
+jupyter 

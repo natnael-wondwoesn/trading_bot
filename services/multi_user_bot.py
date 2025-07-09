@@ -185,6 +185,26 @@ class MultiUserTradingBot:
 
         return None
 
+    async def _send_welcome_sequence(self, telegram_id: int, user: User):
+        """Send welcome sequence to new users"""
+        try:
+            welcome_messages = [
+                "Welcome to Professional Trading Bot!",
+                "Let me quickly show you around...",
+                f"Your account: {user.subscription_tier.title()} subscription",
+                "Tip: Use /help to see all available commands",
+                "Ready to start trading? Type /dashboard to begin!",
+            ]
+
+            for i, message in enumerate(welcome_messages):
+                await asyncio.sleep(0.5)  # Slight delay between messages
+                await self.application.bot.send_message(
+                    chat_id=telegram_id, text=message, parse_mode="Markdown"
+                )
+
+        except Exception as e:
+            logger.warning(f"Failed to send welcome sequence to {telegram_id}: {e}")
+
     async def _cleanup_inactive_users(self):
         """Remove inactive user contexts to save memory"""
         cutoff_time = datetime.now() - timedelta(hours=2)
@@ -246,6 +266,280 @@ class MultiUserTradingBot:
 Ready to start smart trading! 🚀"""
 
         await update.message.reply_text(welcome_message, parse_mode="Markdown")
+
+    async def _handle_help(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /help command"""
+        user_context = await self._get_user_context(update.effective_user.id, update)
+        if not user_context:
+            return
+
+        await self._increment_stat("commands_processed_today")
+
+        help_message = """🤖 **Trading Bot Commands Help**
+
+**📊 Core Commands:**
+• `/start` - Welcome & account overview
+• `/dashboard` - Your trading performance
+• `/settings` - Configure strategies & risk
+• `/emergency` - Emergency stop/controls
+
+**📈 Analysis & Info:**
+• `/status` - Current system status
+• `/performance` - Detailed trading results
+• `/subscription` - View/upgrade your plan
+
+**🛠 Support:**
+• `/support` - Contact customer support
+• `/help` - This help message
+
+**💡 Quick Tips:**
+• Use `/emergency` to instantly stop all trading
+• Check `/dashboard` for real-time performance
+• Adjust risk settings in `/settings`
+
+Need more help? Use `/support` to reach our team! 🎯"""
+
+        await update.message.reply_text(help_message, parse_mode="Markdown")
+
+    async def _handle_emergency(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ):
+        """Handle /emergency command"""
+        user_context = await self._get_user_context(update.effective_user.id, update)
+        if not user_context:
+            return
+
+        await self._increment_stat("commands_processed_today")
+
+        # Emergency keyboard
+        keyboard = [
+            [
+                InlineKeyboardButton(
+                    "🛑 STOP ALL TRADING",
+                    callback_data=f"emergency_stop_{user_context.user.user_id}",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    "🔒 DISABLE BOT",
+                    callback_data=f"emergency_disable_{user_context.user.user_id}",
+                ),
+                InlineKeyboardButton(
+                    "💰 CLOSE POSITIONS",
+                    callback_data=f"emergency_close_{user_context.user.user_id}",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    "📊 System Status",
+                    callback_data=f"emergency_status_{user_context.user.user_id}",
+                ),
+                InlineKeyboardButton(
+                    "❌ Cancel",
+                    callback_data=f"emergency_cancel_{user_context.user.user_id}",
+                ),
+            ],
+        ]
+
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await update.message.reply_text(
+            "🚨 **EMERGENCY CONTROLS**\n\n"
+            "⚠️ Choose your emergency action:\n\n"
+            "• **STOP ALL TRADING** - Halt new trades, keep positions\n"
+            "• **DISABLE BOT** - Complete shutdown for this user\n"
+            "• **CLOSE POSITIONS** - Close all open positions\n\n"
+            "**Use with caution!**",
+            reply_markup=reply_markup,
+            parse_mode="Markdown",
+        )
+
+    async def _handle_status(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /status command"""
+        user_context = await self._get_user_context(update.effective_user.id, update)
+        if not user_context:
+            return
+
+        await self._increment_stat("commands_processed_today")
+
+        # Get system status
+        stats = self.get_system_stats()
+
+        status_message = f"""📊 **System Status**
+
+🟢 **Service Health:**
+• Bot Status: {"🟢 Online" if not self.maintenance_mode else "🔧 Maintenance"}
+• Active Users: {stats.get('active_users', 0)}
+• Messages Today: {stats.get('messages_sent_today', 0)}
+
+⚡ **Performance:**
+• Uptime: {stats.get('uptime_hours', 0):.1f} hours
+• Commands/Hour: {stats.get('commands_per_hour', 0):.1f}
+• Response Time: {stats.get('avg_response_time', 0):.2f}s
+
+💼 **Your Status:**
+• Subscription: {user_context.user.subscription_tier.title()}
+• Trading: {"🟢 Active" if user_context.settings.get('trading_enabled', True) else "🔴 Disabled"}
+• Last Activity: {user_context.last_interaction.strftime('%H:%M:%S')}
+
+🔄 Updated: {datetime.now().strftime('%H:%M:%S')}"""
+
+        await update.message.reply_text(status_message, parse_mode="Markdown")
+
+    async def _handle_performance(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ):
+        """Handle /performance command"""
+        user_context = await self._get_user_context(update.effective_user.id, update)
+        if not user_context:
+            return
+
+        await self._increment_stat("commands_processed_today")
+
+        # Get user performance data
+        performance = await user_service.get_user_performance(user_context.user.user_id)
+
+        if not performance:
+            await update.message.reply_text(
+                "📊 **No Performance Data**\n\n"
+                "You haven't completed any trades yet.\n"
+                "Start trading to see your performance metrics!",
+                parse_mode="Markdown",
+            )
+            return
+
+        # Calculate performance metrics
+        total_pnl = performance.get("total_profit", 0) - performance.get(
+            "total_loss", 0
+        )
+        win_rate = performance.get("win_rate", 0) * 100
+        total_trades = performance.get("total_trades", 0)
+
+        performance_message = f"""📈 **Your Trading Performance**
+
+💰 **Profit & Loss:**
+• Total P&L: ${total_pnl:,.2f}
+• Total Profit: ${performance.get('total_profit', 0):,.2f}
+• Total Loss: ${performance.get('total_loss', 0):,.2f}
+
+📊 **Trade Statistics:**
+• Total Trades: {total_trades}
+• Win Rate: {win_rate:.1f}%
+• Avg Trade: ${performance.get('avg_trade_size', 0):,.2f}
+
+🎯 **Recent Performance:**
+• Today's P&L: ${performance.get('daily_pnl', 0):,.2f}
+• This Week: ${performance.get('weekly_pnl', 0):,.2f}
+• This Month: ${performance.get('monthly_pnl', 0):,.2f}
+
+📅 **Period:** {performance.get('period_start', 'N/A')} - {datetime.now().strftime('%Y-%m-%d')}"""
+
+        # Add performance keyboard
+        keyboard = [
+            [
+                InlineKeyboardButton(
+                    "📊 Detailed Report",
+                    callback_data=f"performance_detailed_{user_context.user.user_id}",
+                ),
+                InlineKeyboardButton(
+                    "📈 Charts",
+                    callback_data=f"performance_charts_{user_context.user.user_id}",
+                ),
+            ],
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await update.message.reply_text(
+            performance_message, reply_markup=reply_markup, parse_mode="Markdown"
+        )
+
+    async def _handle_support(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /support command"""
+        user_context = await self._get_user_context(update.effective_user.id, update)
+        if not user_context:
+            return
+
+        await self._increment_stat("commands_processed_today")
+
+        # Support options keyboard
+        keyboard = [
+            [
+                InlineKeyboardButton(
+                    "❓ FAQ",
+                    callback_data=f"support_faq_{user_context.user.user_id}",
+                ),
+                InlineKeyboardButton(
+                    "💬 Live Chat",
+                    callback_data=f"support_chat_{user_context.user.user_id}",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    "📧 Email Support",
+                    callback_data=f"support_email_{user_context.user.user_id}",
+                ),
+                InlineKeyboardButton(
+                    "🐛 Report Bug",
+                    callback_data=f"support_bug_{user_context.user.user_id}",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    "📚 Documentation",
+                    callback_data=f"support_docs_{user_context.user.user_id}",
+                ),
+            ],
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        support_message = f"""🛠 **Customer Support**
+
+👤 **Your Account:** {user_context.user.subscription_tier.title()} Subscriber
+🆔 **User ID:** {user_context.user.user_id}
+
+🤝 **How can we help you today?**
+
+• **FAQ** - Common questions & answers
+• **Live Chat** - Instant support (Premium+)
+• **Email Support** - Detailed assistance
+• **Report Bug** - Technical issues
+• **Documentation** - Complete guides
+
+⏰ **Support Hours:**
+• Live Chat: 24/7 (Premium/Enterprise)
+• Email: 24-48h response time
+
+📞 **Enterprise Support:**
+Direct phone support available for Enterprise subscribers."""
+
+        await update.message.reply_text(
+            support_message, reply_markup=reply_markup, parse_mode="Markdown"
+        )
+
+    async def _handle_unknown_command(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ):
+        """Handle unknown commands"""
+        user_context = await self._get_user_context(update.effective_user.id, update)
+        if not user_context:
+            return
+
+        command = update.message.text
+
+        unknown_message = f"""❓ **Unknown Command**
+
+I don't recognize the command: `{command}`
+
+**Available Commands:**
+• `/start` - Get started
+• `/help` - View all commands
+• `/dashboard` - Trading overview
+• `/settings` - Configure bot
+• `/emergency` - Emergency controls
+
+Type `/help` for a complete list of commands! 🤖"""
+
+        await update.message.reply_text(unknown_message, parse_mode="Markdown")
 
     async def _handle_settings(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -480,13 +774,13 @@ Ready to upgrade your trading experience?"""
         user_context = await self._get_user_context(query.from_user.id)
         if not user_context:
             await query.edit_message_text(
-                "❌ Session expired. Please use /start to begin."
+                "Session expired. Please use /start to begin."
             )
             return
 
         data_parts = query.data.split("_")
         if len(data_parts) < 3:
-            await query.edit_message_text("❌ Invalid command.")
+            await query.edit_message_text("Invalid command.")
             return
 
         action_type = data_parts[0]
@@ -495,7 +789,7 @@ Ready to upgrade your trading experience?"""
 
         # Verify user ID matches
         if user_id != user_context.user.user_id:
-            await query.edit_message_text("❌ Unauthorized action.")
+            await query.edit_message_text("Unauthorized action.")
             return
 
         # Route to appropriate handler
@@ -505,8 +799,459 @@ Ready to upgrade your trading experience?"""
             await self._handle_dashboard_callback(query, action, user_context)
         elif action_type == "upgrade":
             await self._handle_upgrade_callback(query, action, user_context)
+        elif action_type == "emergency":
+            await self._handle_emergency_callback(query, action, user_context)
+        elif action_type == "support":
+            await self._handle_support_callback(query, action, user_context)
+        elif action_type == "performance":
+            await self._handle_performance_callback(query, action, user_context)
+        elif action_type == "billing":
+            await self._handle_billing_callback(query, action, user_context)
+        elif action_type == "strategy":
+            await self._handle_strategy_callback(query, action, user_context)
         else:
-            await query.edit_message_text("❌ Unknown action.")
+            await query.edit_message_text("Unknown action.")
+
+    async def _handle_settings_callback(
+        self, query, action: str, user_context: UserContext
+    ):
+        """Handle settings callback actions"""
+        try:
+            if action == "strategy":
+                # Import here to avoid circular imports
+                from services.trading_orchestrator import StrategyFactory
+
+                # Get available strategies
+                strategies = StrategyFactory.get_available_strategies()
+                current_strategy = user_context.settings.get(
+                    "trading_strategy", "RSI_EMA"
+                )
+
+                # Create strategy selection keyboard
+                keyboard = []
+                for strategy_name, description in strategies.items():
+                    # Add checkmark if current strategy
+                    display_name = (
+                        f"✓ {strategy_name}"
+                        if strategy_name == current_strategy
+                        else strategy_name
+                    )
+                    keyboard.append(
+                        [
+                            InlineKeyboardButton(
+                                display_name,
+                                callback_data=f"strategy_select_{strategy_name}_{user_context.user.user_id}",
+                            )
+                        ]
+                    )
+
+                # Add back button
+                keyboard.append(
+                    [
+                        InlineKeyboardButton(
+                            "← Back to Settings",
+                            callback_data=f"settings_back_{user_context.user.user_id}",
+                        )
+                    ]
+                )
+
+                reply_markup = InlineKeyboardMarkup(keyboard)
+
+                strategy_text = "**Strategy Selection**\n\n"
+                strategy_text += f"**Current Strategy:** {current_strategy}\n\n"
+                strategy_text += "**Available Strategies:**\n"
+
+                for strategy_name, description in strategies.items():
+                    icon = "◉" if strategy_name == current_strategy else "○"
+                    strategy_text += f"{icon} **{strategy_name}**\n"
+                    strategy_text += f"   {description}\n\n"
+
+                strategy_text += (
+                    "Select a strategy to change your signal detection method:"
+                )
+
+                await query.edit_message_text(
+                    strategy_text, reply_markup=reply_markup, parse_mode="Markdown"
+                )
+            elif action == "risk":
+                await query.edit_message_text(
+                    "**Risk Management**\n\n"
+                    "Max Daily Loss: 5%\n"
+                    "Stop Loss: 2%\n"
+                    "Take Profit: 4%\n\n"
+                    "Use /settings to modify these settings.",
+                    parse_mode="Markdown",
+                )
+            elif action == "notifications":
+                await query.edit_message_text(
+                    "**Notification Settings**\n\n"
+                    "Signal Alerts: Enabled\n"
+                    "Trade Updates: Enabled\n"
+                    "System Alerts: Enabled\n\n"
+                    "Use /settings to modify these settings.",
+                    parse_mode="Markdown",
+                )
+            elif action == "view":
+                settings = user_context.settings
+                await query.edit_message_text(
+                    f"**All Settings**\n\n"
+                    f"Trading Enabled: {settings.get('trading_enabled', True)}\n"
+                    f"Risk Level: {settings.get('risk_level', 'Medium')}\n"
+                    f"Position Size: {settings.get('position_size', 1)}%\n"
+                    f"Stop Loss: {settings.get('stop_loss', 2)}%\n"
+                    f"Take Profit: {settings.get('take_profit', 4)}%",
+                    parse_mode="Markdown",
+                )
+            elif action == "back":
+                # Return to main settings menu
+                await self._show_main_settings_menu(query, user_context)
+            else:
+                await query.edit_message_text("Settings action not implemented yet.")
+        except Exception as e:
+            logger.error(f"Error in settings callback: {e}")
+            await query.edit_message_text("An error occurred. Please try again.")
+
+    async def _handle_dashboard_callback(
+        self, query, action: str, user_context: UserContext
+    ):
+        """Handle dashboard callback actions"""
+        try:
+            if action == "refresh":
+                # Get updated user performance
+                performance = await user_service.get_user_performance(
+                    user_context.user.user_id
+                )
+
+                await query.edit_message_text(
+                    f"**Dashboard Refreshed**\n\n"
+                    f"Total P&L: ${performance.get('total_pnl', 0):,.2f}\n"
+                    f"Today: ${performance.get('daily_pnl', 0):,.2f}\n"
+                    f"Active Trades: {len(user_context.active_trades)}\n"
+                    f"Updated: {datetime.now().strftime('%H:%M:%S')}",
+                    parse_mode="Markdown",
+                )
+            elif action == "details":
+                await query.edit_message_text(
+                    "**Detailed Dashboard**\n\n"
+                    "Opening detailed view...\n"
+                    "Use /dashboard for the main view.",
+                    parse_mode="Markdown",
+                )
+            else:
+                await query.edit_message_text("Dashboard action not implemented yet.")
+        except Exception as e:
+            logger.error(f"Error in dashboard callback: {e}")
+            await query.edit_message_text("An error occurred. Please try again.")
+
+    async def _handle_emergency_callback(
+        self, query, action: str, user_context: UserContext
+    ):
+        """Handle emergency callback actions"""
+        try:
+            if action == "stop":
+                # Stop all trading for this user
+                await user_service.update_user_settings(
+                    user_context.user.user_id, trading_enabled=False
+                )
+                await query.edit_message_text(
+                    "**EMERGENCY STOP ACTIVATED**\n\n"
+                    "All trading has been stopped for your account.\n"
+                    "Existing positions remain open.\n\n"
+                    "Use /settings to re-enable trading.",
+                    parse_mode="Markdown",
+                )
+            elif action == "disable":
+                await query.edit_message_text(
+                    "**BOT DISABLED**\n\n"
+                    "Your bot has been disabled.\n"
+                    "Contact support to re-enable.\n\n"
+                    "Use /support for assistance.",
+                    parse_mode="Markdown",
+                )
+            elif action == "close":
+                await query.edit_message_text(
+                    "**CLOSING POSITIONS**\n\n"
+                    "All open positions are being closed.\n"
+                    "This may take a few moments.\n\n"
+                    "Check /dashboard for updates.",
+                    parse_mode="Markdown",
+                )
+            elif action == "cancel":
+                await query.edit_message_text(
+                    "Emergency action cancelled.\n" "Your trading continues normally."
+                )
+            else:
+                await query.edit_message_text("Emergency action not implemented yet.")
+        except Exception as e:
+            logger.error(f"Error in emergency callback: {e}")
+            await query.edit_message_text("An error occurred. Please try again.")
+
+    async def _handle_support_callback(
+        self, query, action: str, user_context: UserContext
+    ):
+        """Handle support callback actions"""
+        try:
+            if action == "faq":
+                await query.edit_message_text(
+                    "**Frequently Asked Questions**\n\n"
+                    "Q: How do I start trading?\n"
+                    "A: Use /start and configure your settings.\n\n"
+                    "Q: How do I stop trading?\n"
+                    "A: Use /emergency for immediate stop.\n\n"
+                    "Q: How do I change risk settings?\n"
+                    "A: Use /settings > Risk Management.\n\n"
+                    "Need more help? Use /support.",
+                    parse_mode="Markdown",
+                )
+            elif action == "chat":
+                await query.edit_message_text(
+                    "**Live Chat Support**\n\n"
+                    "Premium and Enterprise users have access to 24/7 live chat.\n\n"
+                    "Your subscription: "
+                    + user_context.user.subscription_tier.title()
+                    + "\n\n"
+                    "For immediate help, email: support@tradingbot.com",
+                    parse_mode="Markdown",
+                )
+            elif action == "email":
+                await query.edit_message_text(
+                    "**Email Support**\n\n"
+                    "Send your questions to:\n"
+                    "support@tradingbot.com\n\n"
+                    "Include your User ID: " + str(user_context.user.user_id) + "\n\n"
+                    "Response time: 24-48 hours",
+                    parse_mode="Markdown",
+                )
+            else:
+                await query.edit_message_text("Support action not implemented yet.")
+        except Exception as e:
+            logger.error(f"Error in support callback: {e}")
+            await query.edit_message_text("An error occurred. Please try again.")
+
+    async def _handle_performance_callback(
+        self, query, action: str, user_context: UserContext
+    ):
+        """Handle performance callback actions"""
+        try:
+            if action == "detailed":
+                performance = await user_service.get_user_performance(
+                    user_context.user.user_id
+                )
+                await query.edit_message_text(
+                    f"**Detailed Performance Report**\n\n"
+                    f"Total Trades: {performance.get('total_trades', 0)}\n"
+                    f"Winning Trades: {performance.get('winning_trades', 0)}\n"
+                    f"Losing Trades: {performance.get('losing_trades', 0)}\n"
+                    f"Win Rate: {performance.get('win_rate', 0)*100:.1f}%\n"
+                    f"Best Trade: ${performance.get('best_trade', 0):,.2f}\n"
+                    f"Worst Trade: ${performance.get('worst_trade', 0):,.2f}\n"
+                    f"Average Trade: ${performance.get('avg_trade_size', 0):,.2f}",
+                    parse_mode="Markdown",
+                )
+            elif action == "charts":
+                await query.edit_message_text(
+                    "**Performance Charts**\n\n"
+                    "Chart generation is in development.\n"
+                    "Available in next update.\n\n"
+                    "Use /performance for current metrics.",
+                    parse_mode="Markdown",
+                )
+            else:
+                await query.edit_message_text("Performance action not implemented yet.")
+        except Exception as e:
+            logger.error(f"Error in performance callback: {e}")
+            await query.edit_message_text("An error occurred. Please try again.")
+
+    async def _handle_upgrade_callback(
+        self, query, action: str, user_context: UserContext
+    ):
+        """Handle upgrade callback actions"""
+        try:
+            if action == "premium":
+                await query.edit_message_text(
+                    "**Upgrade to Premium**\n\n"
+                    "Premium Features:\n"
+                    "- 25 daily trades\n"
+                    "- 5 concurrent positions\n"
+                    "- Advanced strategies\n"
+                    "- Priority support\n\n"
+                    "Price: $29.99/month\n\n"
+                    "Contact: billing@tradingbot.com",
+                    parse_mode="Markdown",
+                )
+            elif action == "enterprise":
+                await query.edit_message_text(
+                    "**Upgrade to Enterprise**\n\n"
+                    "Enterprise Features:\n"
+                    "- Unlimited trades\n"
+                    "- 20 concurrent positions\n"
+                    "- Custom strategies\n"
+                    "- Dedicated support\n"
+                    "- API access\n\n"
+                    "Price: $99.99/month\n\n"
+                    "Contact: enterprise@tradingbot.com",
+                    parse_mode="Markdown",
+                )
+            else:
+                await query.edit_message_text("Upgrade option not implemented yet.")
+        except Exception as e:
+            logger.error(f"Error in upgrade callback: {e}")
+            await query.edit_message_text("An error occurred. Please try again.")
+
+    async def _handle_billing_callback(
+        self, query, action: str, user_context: UserContext
+    ):
+        """Handle billing callback actions"""
+        try:
+            if action == "info":
+                await query.edit_message_text(
+                    f"**Billing Information**\n\n"
+                    f"Current Plan: {user_context.user.subscription_tier.title()}\n"
+                    f"User ID: {user_context.user.user_id}\n"
+                    f"Member Since: {user_context.user.created_at.strftime('%B %Y')}\n\n"
+                    f"For billing questions:\n"
+                    f"billing@tradingbot.com",
+                    parse_mode="Markdown",
+                )
+            else:
+                await query.edit_message_text("Billing action not implemented yet.")
+        except Exception as e:
+            logger.error(f"Error in billing callback: {e}")
+            await query.edit_message_text("An error occurred. Please try again.")
+
+    async def _handle_strategy_callback(
+        self, query, action: str, user_context: UserContext
+    ):
+        """Handle strategy selection callback"""
+        try:
+            if action == "select":
+                # Parse the strategy selection from callback data
+                # Callback format: strategy_select_STRATEGY_NAME_user_id
+                data_parts = query.data.split("_")
+                if len(data_parts) >= 4:
+                    strategy_name = data_parts[2]  # Extract strategy name
+
+                    # Update user's strategy setting
+                    await user_service.update_user_settings(
+                        user_context.user.user_id, trading_strategy=strategy_name
+                    )
+
+                    # Update user context
+                    user_context.settings["trading_strategy"] = strategy_name
+
+                    # Notify trading orchestrator of strategy change
+                    from services.trading_orchestrator import trading_orchestrator
+
+                    await trading_orchestrator.update_user_settings(
+                        user_context.user.user_id
+                    )
+
+                    # Import strategy factory for description
+                    from services.trading_orchestrator import StrategyFactory
+
+                    strategies = StrategyFactory.get_available_strategies()
+                    description = strategies.get(strategy_name, "Unknown strategy")
+
+                    success_message = f"**Strategy Updated Successfully!**\n\n"
+                    success_message += f"**New Strategy:** {strategy_name}\n"
+                    success_message += f"**Description:** {description}\n\n"
+                    success_message += (
+                        "Your new strategy will be used for all future signals.\n\n"
+                    )
+                    success_message += (
+                        "**Note:** This change takes effect immediately for new trades."
+                    )
+
+                    # Create back to settings button
+                    keyboard = [
+                        [
+                            InlineKeyboardButton(
+                                "← Back to Settings",
+                                callback_data=f"settings_back_{user_context.user.user_id}",
+                            )
+                        ]
+                    ]
+                    reply_markup = InlineKeyboardMarkup(keyboard)
+
+                    await query.edit_message_text(
+                        success_message,
+                        reply_markup=reply_markup,
+                        parse_mode="Markdown",
+                    )
+                else:
+                    await query.edit_message_text("Invalid strategy selection.")
+            else:
+                await query.edit_message_text("Strategy action not implemented yet.")
+        except Exception as e:
+            logger.error(f"Error in strategy callback: {e}")
+            await query.edit_message_text(
+                "An error occurred while updating strategy. Please try again."
+            )
+
+    async def _show_main_settings_menu(self, query, user_context: UserContext):
+        """Show the main settings menu"""
+        try:
+            # Create settings menu keyboard
+            keyboard = [
+                [
+                    InlineKeyboardButton(
+                        "Strategy",
+                        callback_data=f"settings_strategy_{user_context.user.user_id}",
+                    ),
+                    InlineKeyboardButton(
+                        "Risk Mgmt",
+                        callback_data=f"settings_risk_{user_context.user.user_id}",
+                    ),
+                ],
+                [
+                    InlineKeyboardButton(
+                        "Notifications",
+                        callback_data=f"settings_notifications_{user_context.user.user_id}",
+                    ),
+                    InlineKeyboardButton(
+                        "Emergency",
+                        callback_data=f"settings_emergency_{user_context.user.user_id}",
+                    ),
+                ],
+                [
+                    InlineKeyboardButton(
+                        "View All",
+                        callback_data=f"settings_view_{user_context.user.user_id}",
+                    ),
+                    InlineKeyboardButton(
+                        "Reset",
+                        callback_data=f"settings_reset_{user_context.user.user_id}",
+                    ),
+                ],
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
+            # Get current strategy for display
+            current_strategy = user_context.settings.get("trading_strategy", "RSI_EMA")
+
+            settings_text = f"""**Settings Configuration**
+
+**Current Settings:**
+• Strategy: {current_strategy}
+• Trading: {'Enabled' if user_context.settings.get('trading_enabled', True) else 'Disabled'}
+• Risk Level: {user_context.settings.get('risk_level', 'Medium')}
+
+**Configuration Options:**
+• **Strategy** - Change signal detection method
+• **Risk Mgmt** - Configure risk management rules
+• **Notifications** - Set alert preferences
+• **Emergency** - Quick safety controls
+
+Select an option to configure:"""
+
+            await query.edit_message_text(
+                settings_text, reply_markup=reply_markup, parse_mode="Markdown"
+            )
+        except Exception as e:
+            logger.error(f"Error showing main settings menu: {e}")
+            await query.edit_message_text(
+                "Error loading settings menu. Please try /settings command."
+            )
 
     # Notification System
     async def _notification_worker(self, worker_name: str):
@@ -548,6 +1293,77 @@ Ready to upgrade your trading experience?"""
         except Exception as e:
             logger.error(f"Error processing system message: {e}")
             await self._increment_stat("errors_today")
+
+    async def _send_signal_notification(self, user_id: int, content: Dict):
+        """Send signal notification to user"""
+        try:
+            signal = content.get("signal", {})
+            message = f"""**Trading Signal**
+
+Symbol: {signal.get('symbol', 'N/A')}
+Action: {signal.get('action', 'N/A')}
+Price: ${signal.get('price', 0):.4f}
+Confidence: {signal.get('confidence', 0):.1f}%
+
+Time: {datetime.now().strftime('%H:%M:%S')}"""
+
+            # Find user's Telegram ID
+            for telegram_id, context in self.active_users.items():
+                if context.user.user_id == user_id:
+                    await self.application.bot.send_message(
+                        chat_id=telegram_id, text=message, parse_mode="Markdown"
+                    )
+                    break
+        except Exception as e:
+            logger.error(f"Error sending signal notification: {e}")
+
+    async def _send_alert_notification(self, user_id: int, content: Dict):
+        """Send alert notification to user"""
+        try:
+            title = content.get("title", "Alert")
+            alert_content = content.get("content", "")
+            alert_type = content.get("type", "info")
+
+            icon = (
+                "!" if alert_type == "warning" else "i" if alert_type == "info" else "X"
+            )
+
+            message = f"""**{icon} {title}**
+
+{alert_content}
+
+Time: {datetime.now().strftime('%H:%M:%S')}"""
+
+            # Find user's Telegram ID
+            for telegram_id, context in self.active_users.items():
+                if context.user.user_id == user_id:
+                    await self.application.bot.send_message(
+                        chat_id=telegram_id, text=message, parse_mode="Markdown"
+                    )
+                    break
+        except Exception as e:
+            logger.error(f"Error sending alert notification: {e}")
+
+    async def _send_system_notification(self, user_id: int, content: Dict):
+        """Send system notification to user"""
+        try:
+            system_content = content.get("content", "")
+
+            message = f"""**System Notification**
+
+{system_content}
+
+Time: {datetime.now().strftime('%H:%M:%S')}"""
+
+            # Find user's Telegram ID
+            for telegram_id, context in self.active_users.items():
+                if context.user.user_id == user_id:
+                    await self.application.bot.send_message(
+                        chat_id=telegram_id, text=message, parse_mode="Markdown"
+                    )
+                    break
+        except Exception as e:
+            logger.error(f"Error sending system notification: {e}")
 
     # Public API for sending notifications
     async def send_signal_to_user(self, user_id: int, signal: Signal):

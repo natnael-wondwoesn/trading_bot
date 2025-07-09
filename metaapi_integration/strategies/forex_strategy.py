@@ -4,9 +4,9 @@ from datetime import datetime
 from typing import Dict, Optional
 import logging
 
-from ...strategy import Strategy
-from ...models import Signal
-from ...indicators import calculate_rsi, calculate_ema, calculate_atr, calculate_macd
+from strategy.strategies.strategy import Strategy
+from models.models import Signal
+from indicators import calculate_rsi, calculate_ema, calculate_atr, calculate_macd
 
 logger = logging.getLogger(__name__)
 

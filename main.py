@@ -6,9 +6,12 @@ from typing import Dict, List
 from config.config import Config
 from bot import TradingBot
 from strategy.strategies.rsi_ema_strategy import RSIEMAStrategy
+from strategy.strategies.macd_strategy import MACDStrategy
+from strategy.strategies.bollinger_strategy import BollingerStrategy
 from models.models import PerformanceStats, Signal, TradeSetup
 from mexc.mexc_client import MEXCClient, MEXCTradeExecutor
 from mexc.data_feed import MEXCDataFeed
+from user_settings import user_settings
 
 # Configure logging
 logging.basicConfig(
@@ -30,15 +33,46 @@ class TradingSystem:
 
         # Initialize bot and strategy
         self.bot = TradingBot(Config.TELEGRAM_BOT_TOKEN, Config.TELEGRAM_CHAT_ID)
-        self.strategy = RSIEMAStrategy(
-            rsi_period=Config.RSI_PERIOD,
-            ema_fast=Config.EMA_FAST,
-            ema_slow=Config.EMA_SLOW,
+
+        # Create Telegram application for the bot
+        from telegram.ext import Application
+
+        self.bot.application = (
+            Application.builder().token(Config.TELEGRAM_BOT_TOKEN).build()
         )
+
+        # Initialize strategy based on user settings
+        self.strategy = self.get_current_strategy()
 
         self.running = False
         self.active_trades = {}
         self.performance_tracker = PerformanceTracker()
+
+        # Set up trade callback for bot
+        self.bot.trade_callback = self.execute_trade
+        self.bot.trading_system = self
+
+    def get_current_strategy(self):
+        """Get the current strategy based on user settings"""
+        strategy_type = user_settings.get_strategy()
+
+        if strategy_type == "MACD":
+            return MACDStrategy()
+        elif strategy_type == "BOLLINGER":
+            return BollingerStrategy()
+        else:  # Default to RSI_EMA
+            return RSIEMAStrategy(
+                rsi_period=Config.RSI_PERIOD,
+                ema_fast=Config.EMA_FAST,
+                ema_slow=Config.EMA_SLOW,
+            )
+
+    def update_strategy(self):
+        """Update strategy if user changed it"""
+        new_strategy = self.get_current_strategy()
+        if type(new_strategy) != type(self.strategy):
+            self.strategy = new_strategy
+            logger.info(f"Strategy updated to: {user_settings.get_strategy()}")
 
     async def initialize(self):
         """Initialize the trading system"""
@@ -65,6 +99,13 @@ class TradingSystem:
     async def on_kline_update(self, symbol: str, data: any):
         """Handle kline updates and check for signals"""
         try:
+            # Check if trading is enabled and not in emergency mode
+            if not user_settings.is_trading_enabled():
+                return
+
+            # Update strategy if it was changed
+            self.update_strategy()
+
             # Get latest data
             kline_data = self.data_feed.get_latest_data(symbol)
 
@@ -83,9 +124,27 @@ class TradingSystem:
 
     async def process_signal(self, signal: Signal):
         """Process trading signal"""
+        # Double-check trading is enabled
+        if not user_settings.is_trading_enabled():
+            logger.info("Trading disabled, skipping signal")
+            return
+
         # Check if we already have a position
         if signal.pair in self.active_trades:
             logger.info(f"Already have position in {signal.pair}, skipping signal")
+            return
+
+        # Check maximum open positions limit
+        risk_settings = user_settings.get_risk_settings()
+        if len(self.active_trades) >= risk_settings["max_open_positions"]:
+            logger.info(
+                f"Max open positions ({risk_settings['max_open_positions']}) reached, skipping signal"
+            )
+            await self.bot.send_alert(
+                "Position Limit Reached",
+                f"Cannot open new position for {signal.pair}. Max positions: {risk_settings['max_open_positions']}",
+                "warning",
+            )
             return
 
         # Check volume filter
@@ -100,19 +159,47 @@ class TradingSystem:
         balance_data = await self.mexc_client.get_balance("USDT")
         available_balance = balance_data["free"]
 
+        # Use user settings for risk management
+        risk_percent = risk_settings["max_risk_per_trade"]
+
+        # Apply custom stop loss/take profit if set
+        stop_loss_price = signal.stop_loss
+        take_profit_price = signal.take_profit
+
+        if risk_settings["custom_stop_loss"]:
+            stop_loss_price = (
+                signal.current_price * (1 - risk_settings["custom_stop_loss"] / 100)
+                if signal.action == "BUY"
+                else signal.current_price
+                * (1 + risk_settings["custom_stop_loss"] / 100)
+            )
+
+        if risk_settings["custom_take_profit"]:
+            take_profit_price = (
+                signal.current_price * (1 + risk_settings["custom_take_profit"] / 100)
+                if signal.action == "BUY"
+                else signal.current_price
+                * (1 - risk_settings["custom_take_profit"] / 100)
+            )
+
+        # Update signal with custom levels
+        signal.stop_loss = stop_loss_price
+        signal.take_profit = take_profit_price
+
         # Calculate position size
         position_size = await self.trade_executor.calculate_position_size(
             symbol=signal.pair,
             account_balance=available_balance,
-            risk_percent=Config.MAX_RISK_PER_TRADE,
-            stop_loss_price=signal.stop_loss,
+            risk_percent=risk_percent,
+            stop_loss_price=stop_loss_price,
             entry_price=signal.current_price,
         )
 
-        # Send signal notification
-        await self.bot.send_signal_notification(
-            signal, position_size * signal.current_price
-        )
+        # Send signal notification only if notifications are enabled
+        if user_settings.settings["notifications"]["signal_alerts"]:
+            await self.bot.send_signal_notification(
+                signal, position_size * signal.current_price
+            )
 
         # Store signal for approval
         self.bot.pending_trades[f"{signal.pair}_{signal.timestamp.timestamp()}"] = {
@@ -146,12 +233,13 @@ class TradingSystem:
                 "entry_time": datetime.now(),
             }
 
-            # Send execution confirmation
-            await self.bot.send_alert(
-                "Trade Executed",
-                self.bot.format_trade_execution_message(trade),
-                "success",
-            )
+            # Send execution confirmation only if notifications are enabled
+            if user_settings.settings["notifications"]["trade_execution"]:
+                await self.bot.send_alert(
+                    "Trade Executed",
+                    self.bot.format_trade_execution_message(trade),
+                    "success",
+                )
 
             # Start monitoring for stop loss and take profit
             asyncio.create_task(self.monitor_trade(signal.pair))
@@ -252,14 +340,113 @@ class TradingSystem:
 
     async def get_daily_performance(self) -> PerformanceStats:
         """Get daily performance statistics"""
-        account = await self.mexc_client.get_account()
-        current_balance = sum(
-            float(b["free"]) + float(b["locked"])
-            for b in account["balances"]
-            if b["asset"] == "USDT"
-        )
+        try:
+            account = await self.mexc_client.get_account()
+            current_balance = sum(
+                float(b["free"]) + float(b["locked"])
+                for b in account["balances"]
+                if b["asset"] == "USDT"
+            )
+        except Exception as e:
+            logger.warning(f"Could not fetch account data: {str(e)}")
+            # Use a default balance if we can't fetch from API
+            current_balance = 1000.0  # Default for demo purposes
 
         return self.performance_tracker.get_daily_stats(current_balance)
+
+    async def get_daily_performance_thread_safe(self) -> PerformanceStats:
+        """Thread-safe version for bot commands - creates new HTTP client"""
+        try:
+            # Create a new MEXC client for this thread/event loop
+            from mexc.mexc_client import MEXCClient
+            from config.config import Config
+
+            thread_client = MEXCClient(Config.MEXC_API_KEY, Config.MEXC_API_SECRET)
+
+            account = await thread_client.get_account()
+            current_balance = sum(
+                float(b["free"]) + float(b["locked"])
+                for b in account["balances"]
+                if b["asset"] == "USDT"
+            )
+
+            # Close the client session properly
+            await thread_client.close()
+
+        except Exception as e:
+            logger.warning(f"Could not fetch account data in thread: {str(e)}")
+            # Use a default balance if we can't fetch from API
+            current_balance = 1000.0  # Default for demo purposes
+
+        return self.performance_tracker.get_daily_stats(current_balance)
+
+    async def execute_trade_thread_safe(self, signal: Signal, position_size: float):
+        """Thread-safe version for bot callbacks - creates new HTTP client"""
+        try:
+            # Create a new MEXC client for this thread/event loop
+            from mexc.mexc_client import MEXCClient, MEXCTradeExecutor
+            from config.config import Config
+
+            thread_client = MEXCClient(Config.MEXC_API_KEY, Config.MEXC_API_SECRET)
+            thread_executor = MEXCTradeExecutor(thread_client)
+
+            # Calculate position size based on available balance
+            account = await thread_client.get_account()
+            usdt_balance = 0
+            for balance in account["balances"]:
+                if balance["asset"] == "USDT":
+                    usdt_balance = float(balance["free"])
+                    break
+
+            # Use minimum of requested size and 10% of available balance
+            max_position = usdt_balance * 0.1
+            actual_position_size = min(position_size, max_position)
+
+            if actual_position_size < 5:  # Minimum $5 position
+                raise ValueError(
+                    f"Insufficient balance. Available: ${usdt_balance:.2f}, Required: $5 minimum"
+                )
+
+            # Calculate quantity for the order
+            quantity = actual_position_size / signal.current_price
+
+            # Execute the market order
+            order = await thread_executor.execute_market_order(
+                symbol=signal.pair, side=signal.action, quantity=quantity
+            )
+
+            # Store trade information
+            trade_info = {
+                "pair": signal.pair,
+                "action": signal.action,
+                "entry_price": signal.current_price,
+                "stop_loss": signal.stop_loss,
+                "take_profit": signal.take_profit,
+                "position_size": actual_position_size,
+                "quantity": quantity,
+                "order_id": order.get("orderId"),
+                "timestamp": datetime.now(),
+            }
+
+            # Add to active trades (thread-safe)
+            self.active_trades[signal.pair] = trade_info
+
+            # Close the client session
+            await thread_client.close()
+
+            logger.info(
+                f"Thread-safe trade executed: {signal.pair} {signal.action} ${actual_position_size:.2f}"
+            )
+            return trade_info
+
+        except Exception as e:
+            logger.error(f"Thread-safe trade execution failed: {str(e)}")
+            # Close client on error
+            try:
+                await thread_client.close()
+            except:
+                pass
+            raise
 
     async def send_performance_report(self):
         """Send daily performance report"""
@@ -276,13 +463,71 @@ class TradingSystem:
 
         # Set up bot callbacks
         self.bot.trade_callback = self.execute_trade
+        self.bot.trading_system = self
 
-        # Start performance reporting
+        # Start bot and performance reporting concurrently (no separate thread)
+        asyncio.create_task(self.run_bot_async())
         asyncio.create_task(self.performance_report_loop())
 
         # Keep running
         while self.running:
             await asyncio.sleep(1)
+
+    def setup_bot_handlers(self, application=None):
+        """Setup bot command handlers"""
+        from telegram.ext import CommandHandler, CallbackQueryHandler
+
+        app = application or self.bot.application
+        if app:
+            app.add_handler(CommandHandler("start", self.bot.start_command))
+            app.add_handler(CommandHandler("status", self.bot.status_command))
+            app.add_handler(CommandHandler("performance", self.bot.performance_command))
+            app.add_handler(CommandHandler("test_signal", self.bot.test_signal_command))
+            app.add_handler(CallbackQueryHandler(self.bot.handle_callback))
+
+    async def run_bot_async(self):
+        """Run bot asynchronously in main event loop"""
+        try:
+            # Set up handlers for existing application
+            self.setup_bot_handlers()
+
+            # Initialize and start the application
+            await self.bot.application.initialize()
+            await self.bot.application.start()
+
+            # Start polling
+            logger.info("Bot polling started")
+            await self.bot.application.updater.start_polling()
+
+            # Keep running until stopped
+            while self.running:
+                await asyncio.sleep(1)
+
+            logger.info("Bot received stop signal")
+
+        except Exception as e:
+            logger.error(f"Bot async error: {str(e)}")
+        finally:
+            # Clean up
+            logger.info("Cleaning up bot...")
+            try:
+                # Stop polling first
+                if (
+                    hasattr(self.bot.application.updater, "_running")
+                    and self.bot.application.updater._running
+                ):
+                    await self.bot.application.updater.stop()
+                    logger.info("Bot polling stopped")
+            except Exception as e:
+                logger.error(f"Error stopping polling: {str(e)}")
+
+            try:
+                # Stop and shutdown application
+                await self.bot.application.stop()
+                await self.bot.application.shutdown()
+                logger.info("Bot application shutdown complete")
+            except Exception as e:
+                logger.error(f"Bot cleanup error: {str(e)}")
 
     async def performance_report_loop(self):
         """Send performance reports at scheduled time"""
@@ -314,12 +559,18 @@ class TradingSystem:
         # Stop data feed
         await self.data_feed.stop()
 
-        # Send shutdown message
-        await self.bot.send_alert(
-            "System Stopped",
-            "Trading bot has been shut down. All positions closed.",
-            "warning",
-        )
+        # Send shutdown message first, before stopping bot
+        try:
+            await self.bot.send_alert(
+                "System Stopped",
+                "Trading bot has been shut down. All positions closed.",
+                "warning",
+            )
+        except Exception as e:
+            logger.error(f"Error sending shutdown message: {str(e)}")
+
+        # Bot will stop automatically when self.running becomes False
+        logger.info("Bot will stop when thread completes")
 
 
 class PerformanceTracker:

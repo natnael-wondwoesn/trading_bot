@@ -70,22 +70,22 @@ class MEXCClient:
     # Market Data Methods
     async def get_exchange_info(self) -> Dict:
         """Get exchange trading rules and symbol information"""
-        return await self._request("GET", "/api/v3/exchangeInfo")
+        return await self._request("GET", "/api/v3/exchangeInfo", signed=True)
 
     async def get_ticker(self, symbol: str) -> Dict:
         """Get 24hr ticker price change statistics"""
         params = {"symbol": symbol}
-        return await self._request("GET", "/api/v3/ticker/24hr", params)
+        return await self._request("GET", "/api/v3/ticker/24hr", params, signed=True)
 
     async def get_orderbook(self, symbol: str, limit: int = 20) -> Dict:
         """Get current order book"""
         params = {"symbol": symbol, "limit": limit}
-        return await self._request("GET", "/api/v3/depth", params)
+        return await self._request("GET", "/api/v3/depth", params, signed=True)
 
     async def get_recent_trades(self, symbol: str, limit: int = 100) -> List[Dict]:
         """Get recent trades"""
         params = {"symbol": symbol, "limit": limit}
-        return await self._request("GET", "/api/v3/trades", params)
+        return await self._request("GET", "/api/v3/trades", params, signed=True)
 
     async def get_klines(
         self, symbol: str, interval: str = "1h", limit: int = 100
@@ -93,9 +93,15 @@ class MEXCClient:
         """Get candlestick data"""
         params = {"symbol": symbol, "interval": interval, "limit": limit}
 
-        data = await self._request("GET", "/api/v3/klines", params)
+        data = await self._request("GET", "/api/v3/klines", params, signed=True)
 
-        # Convert to DataFrame
+        # Log the actual response structure for debugging
+        logger.info(f"Klines response structure for {symbol}: {len(data)} rows")
+        if data:
+            logger.info(f"First row structure: {len(data[0])} columns: {data[0]}")
+
+        # MEXC API returns 8 columns for klines data
+        # [timestamp, open, high, low, close, volume, close_time, quote_volume]
         df = pd.DataFrame(
             data,
             columns=[
@@ -107,10 +113,6 @@ class MEXCClient:
                 "volume",
                 "close_time",
                 "quote_volume",
-                "trades",
-                "taker_buy_base",
-                "taker_buy_quote",
-                "ignore",
             ],
         )
 
@@ -120,9 +122,6 @@ class MEXCClient:
 
         for col in ["open", "high", "low", "close", "volume", "quote_volume"]:
             df[col] = df[col].astype(float)
-
-        for col in ["trades"]:
-            df[col] = df[col].astype(int)
 
         df.set_index("timestamp", inplace=True)
         df.attrs["pair"] = symbol

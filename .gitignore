@@ -9,3 +9,7 @@ __pycache__/
 .mypy_cache/
 .coverage
 .env
+trading_bot.log
+trading_bot.log
+debug_bot.log
+trading_bot.log

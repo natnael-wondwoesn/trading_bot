@@ -25,9 +25,10 @@ class Config:
     TRADING_PAIRS = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "ADAUSDT"]
 
     # Strategy Settings
+    ACTIVE_STRATEGY = "RSI_EMA"  # Options: "RSI_EMA", "MACD", "BOLLINGER"
     RSI_PERIOD = 14
-    RSI_OVERSOLD = 30
-    RSI_OVERBOUGHT = 70
+    RSI_OVERSOLD = 35  # Changed from 30 - more sensitive
+    RSI_OVERBOUGHT = 65  # Changed from 70 - more sensitive
     EMA_FAST = 9
     EMA_SLOW = 21
 
@@ -35,7 +36,7 @@ class Config:
     DEFAULT_STOP_LOSS_ATR = 2
     DEFAULT_TAKE_PROFIT_ATR = 3
     MAX_OPEN_POSITIONS = 5
-    MIN_VOLUME_FILTER = 100000  # Minimum 24h volume in USDT
+    MIN_VOLUME_FILTER = 50000  # Reduced from 100000 - less strict volume filter
 
     # Data Feed Settings
     WEBSOCKET_RECONNECT_DELAY = 5

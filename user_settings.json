@@ -1,0 +1,25 @@
+{
+  "strategy": "RSI_EMA",
+  "risk_management": {
+    "max_risk_per_trade": 0.02,
+    "stop_loss_atr": 2.0,
+    "take_profit_atr": 3.0,
+    "max_open_positions": 5,
+    "emergency_stop": false,
+    "trading_enabled": true,
+    "custom_stop_loss": null,
+    "custom_take_profit": null
+  },
+  "notifications": {
+    "signal_alerts": true,
+    "trade_execution": true,
+    "risk_warnings": true
+  },
+  "emergency": {
+    "emergency_mode": false,
+    "auto_close_on_loss": false,
+    "max_daily_loss": 0.05,
+    "emergency_contact": null
+  },
+  "last_updated": "2025-07-08T16:16:27.969986"
+}

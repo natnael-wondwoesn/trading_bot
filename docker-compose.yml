@@ -1,0 +1,82 @@
+version: '3.8'
+
+services:
+  # Main trading bot service
+  trading-bot:
+    build: .
+    restart: unless-stopped
+    environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - DATABASE_URL=/app/data/trading_service.db
+      - WEBHOOK_URL=${WEBHOOK_URL}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - MAX_CONCURRENT_USERS=${MAX_CONCURRENT_USERS:-1000}
+      - REDIS_URL=redis://redis:6379/0
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    ports:
+      - "8080:8080"
+    depends_on:
+      - redis
+    networks:
+      - trading-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Redis for caching and session management
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis-data:/data
+    networks:
+      - trading-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Monitoring and alerting
+  monitoring:
+    build: .
+    restart: unless-stopped
+    command: ["python", "monitoring_main.py"]
+    environment:
+      - DATABASE_URL=/app/data/trading_service.db
+      - WEBHOOK_URL=${WEBHOOK_URL}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    depends_on:
+      - redis
+    networks:
+      - trading-network
+
+  # Nginx reverse proxy (optional)
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+      - ./ssl:/etc/nginx/ssl
+    depends_on:
+      - trading-bot
+    networks:
+      - trading-network
+
+volumes:
+  redis-data:
+
+networks:
+  trading-network:
+    driver: bridge 

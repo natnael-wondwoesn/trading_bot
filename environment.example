@@ -1,0 +1,74 @@
+# Telegram Bot Configuration
+TELEGRAM_BOT_TOKEN=your_telegram_bot_token_here
+
+# Database Configuration
+DATABASE_URL=/app/data/trading_service.db
+
+# Redis Configuration (for caching and sessions)
+REDIS_URL=redis://redis:6379/0
+
+# Monitoring and Alerting
+WEBHOOK_URL=https://your-slack-webhook-or-discord-webhook-url
+SENTRY_DSN=https://your-sentry-dsn-for-error-tracking
+
+# System Configuration
+MAX_CONCURRENT_USERS=1000
+LOG_LEVEL=INFO
+ENVIRONMENT=production
+
+# External API Keys (for real trading)
+BINANCE_API_KEY=your_binance_api_key
+BINANCE_SECRET_KEY=your_binance_secret_key
+MEXC_API_KEY=your_mexc_api_key
+MEXC_SECRET_KEY=your_mexc_secret_key
+
+# MetaTrader Configuration
+MT_ACCOUNT_ID=your_metatrader_account_id
+MT_TOKEN=your_metatrader_token
+
+# Security Configuration
+JWT_SECRET_KEY=your_jwt_secret_key_here
+API_RATE_LIMIT=100  # requests per minute per user
+
+# Cloud Storage (for backups)
+AWS_ACCESS_KEY_ID=your_aws_access_key
+AWS_SECRET_ACCESS_KEY=your_aws_secret_key
+AWS_S3_BUCKET=your_backup_bucket
+
+# Subscription Management
+STRIPE_PUBLIC_KEY=your_stripe_public_key
+STRIPE_SECRET_KEY=your_stripe_secret_key
+STRIPE_WEBHOOK_SECRET=your_stripe_webhook_secret
+
+# System Limits
+MAX_OPEN_POSITIONS_FREE=2
+MAX_OPEN_POSITIONS_PREMIUM=5
+MAX_OPEN_POSITIONS_ENTERPRISE=20
+
+MAX_DAILY_TRADES_FREE=5
+MAX_DAILY_TRADES_PREMIUM=25
+MAX_DAILY_TRADES_ENTERPRISE=100
+
+# Performance Tuning
+DB_CONNECTION_POOL_SIZE=20
+SIGNAL_WORKER_COUNT=8
+NOTIFICATION_WORKER_COUNT=5
+
+# Monitoring Configuration
+HEALTH_CHECK_INTERVAL=60  # seconds
+PERFORMANCE_METRICS_RETENTION=30  # days
+ALERT_COOLDOWN_MINUTES=15
+
+# Email Configuration (for notifications)
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USERNAME=your_email@gmail.com
+SMTP_PASSWORD=your_email_password
+
+# Time Zones
+DEFAULT_TIMEZONE=UTC
+TRADING_TIMEZONE=UTC
+
+# Development/Testing
+MOCK_TRADING=false  # Set to true for paper trading
+SIMULATION_MODE=false  # Set to true for development 

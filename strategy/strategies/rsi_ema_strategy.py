@@ -14,8 +14,11 @@ class RSIEMAStrategy(Strategy):
         self.rsi_period = rsi_period
         self.ema_fast_period = ema_fast
         self.ema_slow_period = ema_slow
-        self.rsi_oversold = 30
-        self.rsi_overbought = 70
+        # Use config values for thresholds
+        from config.config import Config
+
+        self.rsi_oversold = Config.RSI_OVERSOLD
+        self.rsi_overbought = Config.RSI_OVERBOUGHT
 
     def calculate_indicators(self, data: pd.DataFrame) -> Dict[str, any]:
         """Calculate RSI and EMA indicators"""

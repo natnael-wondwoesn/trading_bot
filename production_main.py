@@ -9,6 +9,7 @@ import logging
 import signal
 import sys
 import os
+
 from pathlib import Path
 from datetime import datetime, timedelta
 import uvicorn
@@ -23,15 +24,12 @@ from services.monitoring_service import monitoring_service
 from services.real_market_data_service import real_market_data_service
 from db.multi_user_db import multi_user_db
 
-# Configure logging
-log_dir = os.getenv("LOG_DIR", "./logs")
-os.makedirs(log_dir, exist_ok=True)
-
+# Configure logging with UTF-8 encoding for Windows compatibility
 logging.basicConfig(
-    level=getattr(logging, os.getenv("LOG_LEVEL", "INFO")),
+    level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     handlers=[
-        logging.FileHandler(os.path.join(log_dir, "trading_service.log")),
+        logging.FileHandler("logs/trading_service.log", encoding="utf-8"),
         logging.StreamHandler(sys.stdout),
     ],
 )
@@ -216,6 +214,11 @@ class ProductionTradingService:
             self.services["bot"] = bot
             self.services["bot_app"] = bot_app
 
+            # Set the global instance for other services to use
+            import services.multi_user_bot as bot_module
+
+            bot_module.multi_user_bot = bot
+
             # 6. Start real market data service
             logger.info("Step 6: Starting real market data service...")
             await real_market_data_service.start()
@@ -244,27 +247,62 @@ class ProductionTradingService:
         self.running = False
 
         try:
-            # Stop services in reverse order
+            # Stop services in reverse order of startup
+
+            # 1. Stop Telegram bot first (stops new user requests)
             if "bot" in self.services:
                 logger.info("Stopping Telegram bot...")
-                await self.services["bot"].stop()
+                try:
+                    await self.services["bot"].stop()
+                except Exception as e:
+                    logger.error(f"Error stopping bot: {e}")
 
+            # 2. Stop real market data service (stops new signals)
             logger.info("Stopping real market data service...")
-            await real_market_data_service.stop()
+            try:
+                await real_market_data_service.stop()
+            except Exception as e:
+                logger.error(f"Error stopping market data service: {e}")
 
-            logger.info("Stopping monitoring service...")
-            await monitoring_service.stop()
-
+            # 3. Stop trading orchestrator (finishes pending trades)
             logger.info("Stopping trading orchestrator...")
-            await trading_orchestrator.shutdown()
+            try:
+                await trading_orchestrator.shutdown()
+            except Exception as e:
+                logger.error(f"Error stopping trading orchestrator: {e}")
 
-            # Log shutdown
-            await multi_user_db.log_system_metric("service_shutdown", 1)
+            # 4. Stop monitoring service
+            logger.info("Stopping monitoring service...")
+            try:
+                await monitoring_service.stop()
+            except Exception as e:
+                logger.error(f"Error stopping monitoring service: {e}")
+
+            # 5. Log final shutdown metrics before closing database
+            logger.info("Logging final metrics...")
+            try:
+                await multi_user_db.log_system_metric("service_shutdown", 1)
+                # Wait a moment for final database operations to complete
+                await asyncio.sleep(0.5)
+            except Exception as e:
+                logger.error(f"Error logging shutdown metrics: {e}")
+
+            # 6. Close database connections last (after all services are stopped)
+            logger.info("Closing database connections...")
+            try:
+                await multi_user_db.shutdown()
+            except Exception as e:
+                logger.error(f"Error closing database: {e}")
 
             logger.info("All services stopped gracefully")
 
         except Exception as e:
             logger.error(f"❌ Error during shutdown: {e}")
+            # Even if there's an error, try to close database
+            try:
+                await multi_user_db.shutdown()
+            except Exception as db_error:
+                logger.error(f"Final database shutdown error: {db_error}")
 
     async def _force_signal_generation(self):
         """Force signal generation for testing purposes"""
@@ -325,20 +363,12 @@ class ProductionTradingService:
         except Exception as e:
             logger.error(f"Error in data cleanup: {e}")
 
-    def setup_signal_handlers(self):
-        """Setup signal handlers for graceful shutdown"""
-
-        def signal_handler(signum, frame):
-            logger.info(f"Received signal {signum}")
-            asyncio.create_task(self.shutdown_all_services())
-            sys.exit(0)
-
-        signal.signal(signal.SIGINT, signal_handler)
-        signal.signal(signal.SIGTERM, signal_handler)
-
 
 async def main():
     """Main entry point"""
+    service = None
+    server = None
+
     try:
         # Create data and logs directories
         Path("./data").mkdir(exist_ok=True)
@@ -347,8 +377,15 @@ async def main():
         # Initialize service
         service = ProductionTradingService()
 
-        # Setup signal handlers
-        service.setup_signal_handlers()
+        # Setup signal handlers for graceful shutdown
+        def signal_handler(signum, frame):
+            logger.info(f"Received signal {signum}, initiating graceful shutdown...")
+            if service:
+                # Create shutdown task but don't block signal handler
+                asyncio.create_task(service.shutdown_all_services())
+
+        signal.signal(signal.SIGINT, signal_handler)
+        signal.signal(signal.SIGTERM, signal_handler)
 
         # Start all services
         await service.start_all_services()
@@ -359,16 +396,33 @@ async def main():
         )
         server = uvicorn.Server(config)
 
+        logger.info("Starting FastAPI monitoring server on port 8080...")
+
         # Run server and keep services running
         await server.serve()
 
     except KeyboardInterrupt:
-        logger.info("Received keyboard interrupt")
+        logger.info("Received keyboard interrupt, shutting down...")
     except Exception as e:
-        logger.error(f"Fatal error: {e}")
+        logger.error(f"Fatal error in main: {e}")
+        import traceback
+
+        traceback.print_exc()
     finally:
-        if "service" in locals():
-            await service.shutdown_all_services()
+        # Ensure proper cleanup
+        if service:
+            try:
+                await service.shutdown_all_services()
+            except Exception as cleanup_error:
+                logger.error(f"Error during final cleanup: {cleanup_error}")
+
+        # Give the event loop a moment to finish cleanup
+        try:
+            await asyncio.sleep(0.1)
+        except:
+            pass
+
+        logger.info("Main function completed")
 
 
 if __name__ == "__main__":

@@ -26,6 +26,8 @@ from db.multi_user_db import multi_user_db
 from models.models import Signal
 import queue
 import threading
+from exchange_factory import ExchangeFactory
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +86,7 @@ class MultiUserTradingBot:
 
         # Rate limiting
         self.rate_limits: Dict[int, Dict] = {}  # telegram_id -> rate limit data
+        self._network_retry_count = 0  # New attribute for network retry count
 
     async def initialize(self):
         """Initialize the multi-user bot system"""
@@ -92,13 +95,7 @@ class MultiUserTradingBot:
         # Initialize services
         await user_service.initialize()
 
-        # Create Telegram application
-        self.application = Application.builder().token(self.bot_token).build()
-
-        # Add handlers
-        await self._setup_handlers()
-
-        # Start background workers
+        # Start background workers (but not telegram application yet)
         await self._start_background_workers()
 
         logger.info("Multi-user bot initialized successfully")
@@ -396,62 +393,95 @@ Need more help? Use `/support` to reach our team! 🎯"""
 
         await self._increment_stat("commands_processed_today")
 
-        # Get user performance data
-        performance = await user_service.get_user_performance(user_context.user.user_id)
+        try:
+            # Check if user_service is properly initialized and has the method
+            if not hasattr(user_service, "get_user_performance"):
+                logger.error("user_service doesn't have get_user_performance method")
+                await update.message.reply_text(
+                    "⚠️ **Performance Service Unavailable**\n\n"
+                    "The performance tracking service is currently initializing. "
+                    "Please try again in a few moments.",
+                    parse_mode="Markdown",
+                )
+                return
 
-        if not performance:
+            # Get user performance data with comprehensive error handling
+            try:
+                performance = await user_service.get_user_performance(
+                    user_context.user.user_id
+                )
+            except AttributeError as ae:
+                logger.error(f"AttributeError calling get_user_performance: {ae}")
+                await update.message.reply_text(
+                    "⚠️ **Service Temporarily Unavailable**\n\n"
+                    "The performance service is starting up. Please try again in a moment.",
+                    parse_mode="Markdown",
+                )
+                return
+            except Exception as pe:
+                logger.error(f"Error getting user performance: {pe}")
+                # Return default empty performance
+                performance = {
+                    "total_pnl": 0.0,
+                    "total_trades": 0,
+                    "win_rate": 0.0,
+                    "daily_pnl": 0.0,
+                }
+
+            if not performance:
+                await update.message.reply_text(
+                    "📊 **No Performance Data**\n\n"
+                    "You haven't completed any trades yet.\n"
+                    "Start trading to see your performance metrics!",
+                    parse_mode="Markdown",
+                )
+                return
+
+            # Format and send performance data
+            total_pnl = performance.get("total_pnl", 0.0)
+            total_trades = performance.get("total_trades", 0)
+            win_rate = performance.get("win_rate", 0.0) * 100
+            daily_pnl = performance.get("daily_pnl", 0.0)
+
+            pnl_emoji = "🟢" if total_pnl >= 0 else "🔴"
+            daily_emoji = "📈" if daily_pnl >= 0 else "📉"
+
+            performance_text = (
+                f"📊 **Your Trading Performance**\n\n"
+                f"{pnl_emoji} **Total P&L:** ${total_pnl:,.2f}\n"
+                f"📈 **Total Trades:** {total_trades}\n"
+                f"🎯 **Win Rate:** {win_rate:.1f}%\n"
+                f"{daily_emoji} **Today's P&L:** ${daily_pnl:,.2f}\n\n"
+                f"_Last updated: {datetime.now().strftime('%H:%M:%S')}_"
+            )
+
+            keyboard = [
+                [
+                    InlineKeyboardButton(
+                        "📊 Detailed Report",
+                        callback_data=f"performance_detailed_{user_context.user.user_id}",
+                    ),
+                    InlineKeyboardButton(
+                        "🔄 Refresh",
+                        callback_data=f"performance_refresh_{user_context.user.user_id}",
+                    ),
+                ]
+            ]
+
             await update.message.reply_text(
-                "📊 **No Performance Data**\n\n"
-                "You haven't completed any trades yet.\n"
-                "Start trading to see your performance metrics!",
+                performance_text,
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup(keyboard),
+            )
+
+        except Exception as e:
+            logger.error(f"Error in performance command: {e}")
+            await update.message.reply_text(
+                "❌ **Error**\n\n"
+                "Sorry, I couldn't retrieve your performance data right now. "
+                "Please try again later.",
                 parse_mode="Markdown",
             )
-            return
-
-        # Calculate performance metrics
-        total_pnl = performance.get("total_profit", 0) - performance.get(
-            "total_loss", 0
-        )
-        win_rate = performance.get("win_rate", 0) * 100
-        total_trades = performance.get("total_trades", 0)
-
-        performance_message = f"""📈 **Your Trading Performance**
-
-💰 **Profit & Loss:**
-• Total P&L: ${total_pnl:,.2f}
-• Total Profit: ${performance.get('total_profit', 0):,.2f}
-• Total Loss: ${performance.get('total_loss', 0):,.2f}
-
-📊 **Trade Statistics:**
-• Total Trades: {total_trades}
-• Win Rate: {win_rate:.1f}%
-• Avg Trade: ${performance.get('avg_trade_size', 0):,.2f}
-
-🎯 **Recent Performance:**
-• Today's P&L: ${performance.get('daily_pnl', 0):,.2f}
-• This Week: ${performance.get('weekly_pnl', 0):,.2f}
-• This Month: ${performance.get('monthly_pnl', 0):,.2f}
-
-📅 **Period:** {performance.get('period_start', 'N/A')} - {datetime.now().strftime('%Y-%m-%d')}"""
-
-        # Add performance keyboard
-        keyboard = [
-            [
-                InlineKeyboardButton(
-                    "📊 Detailed Report",
-                    callback_data=f"performance_detailed_{user_context.user.user_id}",
-                ),
-                InlineKeyboardButton(
-                    "📈 Charts",
-                    callback_data=f"performance_charts_{user_context.user.user_id}",
-                ),
-            ],
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-
-        await update.message.reply_text(
-            performance_message, reply_markup=reply_markup, parse_mode="Markdown"
-        )
 
     async def _handle_support(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /support command"""
@@ -786,16 +816,27 @@ Ready to upgrade your trading experience?"""
         action_type = data_parts[0]
         action = data_parts[1]
 
-        # Handle different callback data formats
-        if action_type == "strategy" and action == "select":
-            # Format: strategy_select_STRATEGY_NAME_user_id
-            if len(data_parts) < 4:
-                await query.edit_message_text("Invalid strategy selection.")
-                return
-            user_id = int(data_parts[3])
-        else:
-            # Standard format: action_type_action_user_id
-            user_id = int(data_parts[2])
+        # Handle different callback data formats with safe integer parsing
+        try:
+            if action_type == "strategy" and action == "select":
+                # Format: strategy_select_STRATEGY_NAME_user_id
+                if len(data_parts) < 4:
+                    await query.edit_message_text("Invalid strategy selection.")
+                    return
+                user_id = int(data_parts[3])
+            elif action_type == "exchange" and action == "select":
+                # Format: exchange_select_EXCHANGE_NAME_user_id
+                if len(data_parts) < 4:
+                    await query.edit_message_text("Invalid exchange selection.")
+                    return
+                user_id = int(data_parts[3])
+            else:
+                # Standard format: action_type_action_user_id
+                user_id = int(data_parts[2])
+        except (ValueError, IndexError) as e:
+            logger.error(f"Error parsing callback data '{query.data}': {e}")
+            await query.edit_message_text("Invalid request format. Please try again.")
+            return
 
         # Verify user ID matches
         if user_id != user_context.user.user_id:
@@ -819,6 +860,43 @@ Ready to upgrade your trading experience?"""
             await self._handle_billing_callback(query, action, user_context)
         elif action_type == "strategy":
             await self._handle_strategy_callback(query, action, user_context)
+        elif action_type == "exchange":
+            await self._handle_exchange_callback(query, action, user_context)
+        elif action_type == "exchange_select":
+            # Handle exchange selection (similar to strategy_select)
+            if len(data_parts) >= 3:
+                exchange_name = data_parts[2]  # exchange_select_MEXC_user_id
+                try:
+                    # Update user exchange in database
+                    await user_service.update_user_settings(
+                        user_context.user.user_id, exchange=exchange_name
+                    )
+
+                    # Update local settings
+                    user_context.settings["exchange"] = exchange_name
+
+                    # Notify trading orchestrator of the change
+                    from services.trading_orchestrator import trading_orchestrator
+
+                    await trading_orchestrator.update_user_settings(
+                        user_context.user.user_id
+                    )
+
+                    await query.edit_message_text(
+                        f"**Exchange Updated**\n\n"
+                        f"Your trading exchange has been changed to **{exchange_name}**.\n\n"
+                        f"All future trades will be executed on {exchange_name}.\n\n"
+                        f"Use /settings to make further changes.",
+                        parse_mode="Markdown",
+                    )
+
+                except Exception as e:
+                    logger.error(
+                        f"Error updating exchange for user {user_context.user.user_id}: {e}"
+                    )
+                    await query.edit_message_text(
+                        "Failed to update exchange. Please try again."
+                    )
         else:
             await query.edit_message_text("Unknown action.")
 
@@ -842,7 +920,7 @@ Ready to upgrade your trading experience?"""
                 for strategy_name, description in strategies.items():
                     # Add checkmark if current strategy
                     display_name = (
-                        f"✓ {strategy_name}"
+                        f"[*] {strategy_name}"
                         if strategy_name == current_strategy
                         else strategy_name
                     )
@@ -915,6 +993,8 @@ Ready to upgrade your trading experience?"""
             elif action == "back":
                 # Return to main settings menu
                 await self._show_main_settings_menu(query, user_context)
+            elif action == "exchange":
+                await self._handle_exchange_callback(query, "select", user_context)
             else:
                 await query.edit_message_text("Settings action not implemented yet.")
         except Exception as e:
@@ -927,31 +1007,88 @@ Ready to upgrade your trading experience?"""
         """Handle dashboard callback actions"""
         try:
             if action == "refresh":
-                # Get updated user performance
-                performance = await user_service.get_user_performance(
-                    user_context.user.user_id
-                )
+                try:
+                    # Check if user_service has the required method
+                    if not hasattr(user_service, "get_user_performance"):
+                        await query.edit_message_text(
+                            "⚠️ **Service Initializing**\n\n"
+                            "The dashboard service is starting up. Please try again shortly.",
+                            parse_mode="Markdown",
+                        )
+                        return
 
-                await query.edit_message_text(
-                    f"**Dashboard Refreshed**\n\n"
-                    f"Total P&L: ${performance.get('total_pnl', 0):,.2f}\n"
-                    f"Today: ${performance.get('daily_pnl', 0):,.2f}\n"
-                    f"Active Trades: {len(user_context.active_trades)}\n"
-                    f"Updated: {datetime.now().strftime('%H:%M:%S')}",
-                    parse_mode="Markdown",
-                )
-            elif action == "details":
-                await query.edit_message_text(
-                    "**Detailed Dashboard**\n\n"
-                    "Opening detailed view...\n"
-                    "Use /dashboard for the main view.",
-                    parse_mode="Markdown",
-                )
-            else:
-                await query.edit_message_text("Dashboard action not implemented yet.")
+                    # Get updated user performance with error handling
+                    try:
+                        performance = await user_service.get_user_performance(
+                            user_context.user.user_id
+                        )
+                    except AttributeError:
+                        # Service not ready, use defaults
+                        performance = {
+                            "total_pnl": 0.0,
+                            "daily_pnl": 0.0,
+                            "total_trades": 0,
+                            "win_rate": 0.0,
+                        }
+
+                    total_pnl = performance.get("total_pnl", 0.0)
+                    daily_pnl = performance.get("daily_pnl", 0.0)
+                    active_trades = (
+                        len(user_context.active_trades)
+                        if user_context.active_trades
+                        else 0
+                    )
+
+                    await query.edit_message_text(
+                        f"**Dashboard Refreshed**\n\n"
+                        f"Total P&L: ${total_pnl:,.2f}\n"
+                        f"Today: ${daily_pnl:,.2f}\n"
+                        f"Active Trades: {active_trades}\n"
+                        f"Strategy: {user_context.settings.get('trading_strategy', 'N/A')}\n\n"
+                        f"_Updated: {datetime.now().strftime('%H:%M:%S')}_",
+                        parse_mode="Markdown",
+                    )
+                except Exception as e:
+                    logger.error(f"Error refreshing dashboard: {e}")
+                    await query.edit_message_text(
+                        "❌ **Refresh Failed**\n\n"
+                        "Unable to refresh dashboard data. Please try again.",
+                        parse_mode="Markdown",
+                    )
+
+            elif action == "trades":
+                # Show active trades
+                active_trades = user_context.active_trades or []
+                if not active_trades:
+                    await query.edit_message_text(
+                        "📊 **Active Trades**\n\n" "No active trades at the moment.",
+                        parse_mode="Markdown",
+                    )
+                else:
+                    trades_text = "📊 **Active Trades**\n\n"
+                    for i, trade in enumerate(
+                        active_trades[:5], 1
+                    ):  # Show max 5 trades
+                        pnl = trade.current_pnl or 0
+                        pnl_emoji = "🟢" if pnl >= 0 else "🔴"
+                        trades_text += (
+                            f"{i}. {trade.symbol} {trade.side.upper()}\n"
+                            f"   {pnl_emoji} P&L: ${pnl:,.2f}\n\n"
+                        )
+
+                    if len(active_trades) > 5:
+                        trades_text += (
+                            f"_... and {len(active_trades) - 5} more trades_\n"
+                        )
+
+                    await query.edit_message_text(
+                        trades_text,
+                        parse_mode="Markdown",
+                    )
+
         except Exception as e:
             logger.error(f"Error in dashboard callback: {e}")
-            await query.edit_message_text("An error occurred. Please try again.")
+            await query.answer("Error processing request")
 
     async def _handle_emergency_callback(
         self, query, action: str, user_context: UserContext
@@ -1044,33 +1181,72 @@ Ready to upgrade your trading experience?"""
         """Handle performance callback actions"""
         try:
             if action == "detailed":
-                performance = await user_service.get_user_performance(
-                    user_context.user.user_id
-                )
-                await query.edit_message_text(
-                    f"**Detailed Performance Report**\n\n"
-                    f"Total Trades: {performance.get('total_trades', 0)}\n"
-                    f"Winning Trades: {performance.get('winning_trades', 0)}\n"
-                    f"Losing Trades: {performance.get('losing_trades', 0)}\n"
-                    f"Win Rate: {performance.get('win_rate', 0)*100:.1f}%\n"
-                    f"Best Trade: ${performance.get('best_trade', 0):,.2f}\n"
-                    f"Worst Trade: ${performance.get('worst_trade', 0):,.2f}\n"
-                    f"Average Trade: ${performance.get('avg_trade_size', 0):,.2f}",
-                    parse_mode="Markdown",
-                )
-            elif action == "charts":
-                await query.edit_message_text(
-                    "**Performance Charts**\n\n"
-                    "Chart generation is in development.\n"
-                    "Available in next update.\n\n"
-                    "Use /performance for current metrics.",
-                    parse_mode="Markdown",
-                )
-            else:
-                await query.edit_message_text("Performance action not implemented yet.")
+                try:
+                    # Check if user_service has the required method
+                    if not hasattr(user_service, "get_user_performance"):
+                        await query.edit_message_text(
+                            "⚠️ **Service Initializing**\n\n"
+                            "The performance service is starting up. Please try again shortly.",
+                            parse_mode="Markdown",
+                        )
+                        return
+
+                    try:
+                        performance = await user_service.get_user_performance(
+                            user_context.user.user_id
+                        )
+                    except AttributeError:
+                        # Service not ready, use defaults
+                        performance = {
+                            "total_pnl": 0.0,
+                            "total_trades": 0,
+                            "winning_trades": 0,
+                            "losing_trades": 0,
+                            "win_rate": 0.0,
+                            "best_trade": 0.0,
+                            "worst_trade": 0.0,
+                            "avg_trade_size": 0.0,
+                        }
+
+                    total_pnl = performance.get("total_pnl", 0.0)
+                    total_trades = performance.get("total_trades", 0)
+                    winning_trades = performance.get("winning_trades", 0)
+                    losing_trades = performance.get("losing_trades", 0)
+                    win_rate = performance.get("win_rate", 0.0) * 100
+                    best_trade = performance.get("best_trade", 0.0)
+                    worst_trade = performance.get("worst_trade", 0.0)
+                    avg_trade = performance.get("avg_trade_size", 0.0)
+
+                    await query.edit_message_text(
+                        f"📊 **Detailed Performance Report**\n\n"
+                        f"💰 **P&L Summary:**\n"
+                        f"• Total P&L: ${total_pnl:,.2f}\n"
+                        f"• Best Trade: ${best_trade:,.2f}\n"
+                        f"• Worst Trade: ${worst_trade:,.2f}\n"
+                        f"• Avg Trade: ${avg_trade:,.2f}\n\n"
+                        f"📈 **Trade Statistics:**\n"
+                        f"• Total Trades: {total_trades}\n"
+                        f"• Winning Trades: {winning_trades}\n"
+                        f"• Losing Trades: {losing_trades}\n"
+                        f"• Win Rate: {win_rate:.1f}%\n\n"
+                        f"_Report generated: {datetime.now().strftime('%H:%M:%S')}_",
+                        parse_mode="Markdown",
+                    )
+                except Exception as e:
+                    logger.error(f"Error getting detailed performance: {e}")
+                    await query.edit_message_text(
+                        "❌ **Error**\n\n"
+                        "Unable to generate detailed report. Please try again.",
+                        parse_mode="Markdown",
+                    )
+
+            elif action == "refresh":
+                # Refresh current performance view
+                await self._handle_performance_callback(query, "detailed", user_context)
+
         except Exception as e:
             logger.error(f"Error in performance callback: {e}")
-            await query.edit_message_text("An error occurred. Please try again.")
+            await query.answer("Error processing request")
 
     async def _handle_upgrade_callback(
         self, query, action: str, user_context: UserContext
@@ -1200,6 +1376,68 @@ Ready to upgrade your trading experience?"""
                 "An error occurred while updating strategy. Please try again."
             )
 
+    async def _handle_exchange_callback(
+        self, query, action: str, user_context: UserContext
+    ):
+        """Handle exchange selection callback"""
+        try:
+            if action == "select":
+                # Get available exchanges
+                exchanges = ExchangeFactory.get_available_exchanges()
+                current_exchange = user_context.settings.get("exchange", "MEXC")
+
+                # Create exchange selection keyboard
+                keyboard = []
+                for exchange_name, description in exchanges.items():
+                    # Add checkmark if current exchange
+                    display_name = (
+                        f"[*] {exchange_name}"
+                        if exchange_name == current_exchange
+                        else exchange_name
+                    )
+                    keyboard.append(
+                        [
+                            InlineKeyboardButton(
+                                display_name,
+                                callback_data=f"exchange_select_{exchange_name}_{user_context.user.user_id}",
+                            )
+                        ]
+                    )
+
+                # Add back button
+                keyboard.append(
+                    [
+                        InlineKeyboardButton(
+                            "← Back to Settings",
+                            callback_data=f"settings_back_{user_context.user.user_id}",
+                        )
+                    ]
+                )
+
+                reply_markup = InlineKeyboardMarkup(keyboard)
+
+                exchange_text = "**Exchange Selection**\n\n"
+                exchange_text += f"**Current Exchange:** {current_exchange}\n\n"
+                exchange_text += "**Available Exchanges:**\n"
+
+                for exchange_name, description in exchanges.items():
+                    icon = "◉" if exchange_name == current_exchange else "○"
+                    exchange_text += f"{icon} **{exchange_name}**\n"
+                    exchange_text += f"   {description}\n\n"
+
+                exchange_text += "Select an exchange to change your trading platform."
+
+                await query.edit_message_text(
+                    exchange_text, reply_markup=reply_markup, parse_mode="Markdown"
+                )
+            else:
+                await query.edit_message_text("Exchange action not implemented yet.")
+        except Exception as e:
+            logger.error(f"Error in exchange callback: {e}")
+            await query.edit_message_text(
+                "An error occurred while updating exchange. Please try again."
+            )
+
     async def _show_main_settings_menu(self, query, user_context: UserContext):
         """Show the main settings menu"""
         try:
@@ -1211,25 +1449,31 @@ Ready to upgrade your trading experience?"""
                         callback_data=f"settings_strategy_{user_context.user.user_id}",
                     ),
                     InlineKeyboardButton(
-                        "Risk Mgmt",
-                        callback_data=f"settings_risk_{user_context.user.user_id}",
+                        "Exchange",
+                        callback_data=f"settings_exchange_{user_context.user.user_id}",
                     ),
                 ],
                 [
+                    InlineKeyboardButton(
+                        "Risk Mgmt",
+                        callback_data=f"settings_risk_{user_context.user.user_id}",
+                    ),
                     InlineKeyboardButton(
                         "Notifications",
                         callback_data=f"settings_notifications_{user_context.user.user_id}",
                     ),
+                ],
+                [
                     InlineKeyboardButton(
                         "Emergency",
                         callback_data=f"settings_emergency_{user_context.user.user_id}",
                     ),
-                ],
-                [
                     InlineKeyboardButton(
                         "View All",
                         callback_data=f"settings_view_{user_context.user.user_id}",
                     ),
+                ],
+                [
                     InlineKeyboardButton(
                         "Reset",
                         callback_data=f"settings_reset_{user_context.user.user_id}",
@@ -1238,18 +1482,21 @@ Ready to upgrade your trading experience?"""
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
 
-            # Get current strategy for display
+            # Get current settings for display
             current_strategy = user_context.settings.get("trading_strategy", "RSI_EMA")
+            current_exchange = user_context.settings.get("exchange", "MEXC")
 
             settings_text = f"""**Settings Configuration**
 
 **Current Settings:**
 • Strategy: {current_strategy}
+• Exchange: {current_exchange}
 • Trading: {'Enabled' if user_context.settings.get('trading_enabled', True) else 'Disabled'}
 • Risk Level: {user_context.settings.get('risk_level', 'Medium')}
 
 **Configuration Options:**
 • **Strategy** - Change signal detection method
+• **Exchange** - Select trading exchange (MEXC/Bybit)
 • **Risk Mgmt** - Configure risk management rules
 • **Notifications** - Set alert preferences
 • **Emergency** - Quick safety controls
@@ -1567,49 +1814,429 @@ Time: {datetime.now().strftime('%H:%M:%S')}"""
             logger.info("Daily stats reset")
 
     async def _error_handler(self, update: object, context: ContextTypes.DEFAULT_TYPE):
-        """Global error handler"""
-        logger.error(f"Exception while handling update: {context.error}")
+        """Global error handler with improved error handling"""
+        error = context.error
+        error_message = str(error)
+
+        # Log the error with more context
+        if isinstance(update, Update):
+            logger.error(f"Exception while handling update {update.update_id}: {error}")
+        else:
+            logger.error(f"Exception while handling update: {error}")
+
         await self._increment_stat("errors_today")
 
-        # Try to notify user of error
-        if isinstance(update, Update) and update.effective_user:
-            try:
-                await context.bot.send_message(
-                    chat_id=update.effective_user.id,
-                    text="❌ An error occurred. Our team has been notified. Please try again later.",
+        # Handle specific error types with appropriate responses
+        try:
+            if "Extra data" in error_message and "line" in error_message:
+                # JSON parsing error - likely malformed update
+                logger.warning(
+                    f"JSON parsing error in telegram update: {error_message}"
                 )
-            except Exception:
-                pass  # Don't let error handler errors crash the system
+
+                # Track JSON parsing errors
+                await self._increment_stat("json_parse_errors_today")
+
+                # Try to recover from JSON parsing errors
+                try:
+                    logger.info("Attempting JSON error recovery...")
+
+                    # Clear any pending updates to prevent repeated errors
+                    if hasattr(self, "application") and self.application:
+                        try:
+                            # Create a temporary bot instance to clear updates
+                            temp_bot = Bot(token=self.bot_token)
+                            try:
+                                # Get latest update offset to skip corrupted data
+                                await temp_bot.get_updates(
+                                    offset=-1, limit=1, timeout=1
+                                )
+                                logger.info("Cleared corrupted update data")
+                            finally:
+                                if hasattr(temp_bot, "_request") and hasattr(
+                                    temp_bot._request, "_session"
+                                ):
+                                    await temp_bot._request._session.close()
+                        except Exception as recovery_error:
+                            logger.warning(
+                                f"Update recovery attempt failed: {recovery_error}"
+                            )
+
+                    # Check if we're getting too many JSON errors
+                    json_error_count = self.stats.get("json_parse_errors_today", 0)
+                    if json_error_count > 10:  # More than 10 JSON errors today
+                        logger.warning(
+                            f"High JSON error count ({json_error_count}), implementing delay"
+                        )
+                        await asyncio.sleep(5)  # Brief pause to let things stabilize
+
+                except Exception as json_recovery_error:
+                    logger.error(f"Error in JSON error recovery: {json_recovery_error}")
+
+                # Don't respond to user for JSON errors, just log and recover
+                return
+
+            elif (
+                "NetworkError" in error_message or "getaddrinfo failed" in error_message
+            ):
+                # Network connectivity issues
+                logger.warning(f"Network connectivity issue: {error_message}")
+
+                # Implement exponential backoff for network errors
+                retry_count = getattr(self, "_network_retry_count", 0)
+                if retry_count < 5:  # Max 5 retries
+                    self._network_retry_count = retry_count + 1
+                    wait_time = min(2**retry_count, 60)  # Max 60 seconds
+                    logger.info(
+                        f"Network error retry {retry_count + 1}/5, waiting {wait_time}s"
+                    )
+                    await asyncio.sleep(wait_time)
+                else:
+                    # Reset retry count after max retries
+                    self._network_retry_count = 0
+                    logger.error(
+                        "Max network retries exceeded, continuing without response"
+                    )
+
+                # Don't try to respond to user during network issues
+                return
+
+            elif "ConnectTimeout" in error_message or "ReadTimeout" in error_message:
+                # Telegram API timeout
+                logger.warning(f"Telegram API timeout: {error_message}")
+                # Don't respond to prevent cascade of timeouts
+                return
+
+            elif "Conflict" in error_message and "webhook" in error_message.lower():
+                # Webhook conflict (multiple bot instances)
+                logger.error(f"Webhook conflict detected: {error_message}")
+                # This is a critical configuration issue
+                return
+
+            elif "BadRequest" in error_message:
+                # Invalid request to Telegram API
+                logger.warning(f"Bad request to Telegram API: {error_message}")
+
+                # Try to respond to user if we have an update
+                if isinstance(update, Update) and update.effective_chat:
+                    try:
+                        await update.effective_chat.send_message(
+                            "⚠️ Sorry, I couldn't process that request. "
+                            "Please try again with a different command.",
+                            timeout=10,
+                        )
+                    except Exception as send_error:
+                        logger.error(f"Failed to send error response: {send_error}")
+                return
+
+            elif "Unauthorized" in error_message:
+                # Bot token issue
+                logger.critical(f"Bot authorization error: {error_message}")
+                # This is critical - bot token is invalid
+                return
+
+            elif (
+                "UserService" in error_message
+                and "get_user_performance" in error_message
+            ):
+                # Service initialization issue
+                logger.error(f"Service initialization error: {error_message}")
+
+                if isinstance(update, Update) and update.effective_chat:
+                    try:
+                        await update.effective_chat.send_message(
+                            "⏳ **System Initializing**\\n\\n"
+                            "Some services are still starting up. "
+                            "Please try again in a few moments.",
+                            parse_mode="Markdown",
+                            timeout=10,
+                        )
+                    except Exception as send_error:
+                        logger.error(
+                            f"Failed to send initialization error response: {send_error}"
+                        )
+                return
+
+            else:
+                # Generic error handling
+                logger.error(f"Unhandled error in telegram bot: {error_message}")
+
+                # Try to send a generic error message to user
+                if isinstance(update, Update) and update.effective_chat:
+                    try:
+                        await update.effective_chat.send_message(
+                            "❌ **Temporary Error**\\n\\n"
+                            "I encountered an unexpected error. "
+                            "Please try again in a moment.",
+                            parse_mode="Markdown",
+                            timeout=10,
+                        )
+                    except Exception as send_error:
+                        logger.error(
+                            f"Failed to send generic error response: {send_error}"
+                        )
+
+        except Exception as handler_error:
+            # Error in error handler - log and continue
+            logger.error(f"Error in error handler: {handler_error}")
+
+        # Reset network retry count on successful error handling
+        if "NetworkError" not in error_message:
+            self._network_retry_count = 0
+
+        # Update error statistics for monitoring
+        try:
+            await self._track_error_type(error_message)
+        except Exception as stats_error:
+            logger.error(f"Error updating error statistics: {stats_error}")
+
+    async def _track_error_type(self, error_message: str):
+        """Track different types of errors for monitoring"""
+        try:
+            error_type = "unknown"
+
+            if "NetworkError" in error_message or "getaddrinfo" in error_message:
+                error_type = "network"
+            elif "Timeout" in error_message:
+                error_type = "timeout"
+            elif "BadRequest" in error_message:
+                error_type = "bad_request"
+            elif "UserService" in error_message:
+                error_type = "service_init"
+            elif "JSON" in error_message:
+                error_type = "json_parse"
+
+            # Update error type counter
+            current_count = self.stats.get(f"errors_{error_type}_today", 0)
+            self.stats[f"errors_{error_type}_today"] = current_count + 1
+
+            # Log warning if specific error type is high
+            if current_count > 20:  # More than 20 of same error type
+                logger.warning(f"High {error_type} error count: {current_count + 1}")
+
+        except Exception as e:
+            logger.error(f"Error tracking error type: {e}")
 
     # Bot Control
-    async def start(self):
-        """Start the multi-user bot"""
-        logger.info("Starting multi-user trading bot...")
+    async def start(self) -> Application:
+        """Start the bot with enhanced instance conflict prevention"""
+        logger.info("Initializing Multi-User Trading Bot...")
 
+        # Enhanced bot instance conflict prevention
+        logger.info("Checking for existing bot instances...")
+        try:
+            # Try to get bot info to detect if another instance is running
+            temp_bot = Bot(token=self.bot_token)
+            try:
+                # Test if we can connect without conflicts
+                await temp_bot.get_me()
+                logger.info("Bot token verified successfully")
+
+                # Clear any pending updates to prevent conflicts
+                logger.info("Clearing pending updates...")
+                await temp_bot.get_updates(offset=-1, limit=1, timeout=1)
+                logger.info("Pending updates cleared")
+
+            except Exception as token_error:
+                logger.error(f"Bot token verification failed: {token_error}")
+                raise ValueError(f"Invalid bot token or network issue: {token_error}")
+            finally:
+                # Close temporary bot session
+                if hasattr(temp_bot, "_request") and hasattr(
+                    temp_bot._request, "_session"
+                ):
+                    await temp_bot._request._session.close()
+
+        except Exception as e:
+            logger.error(f"Error during bot instance check: {e}")
+            # Continue anyway - the error might be due to network issues
+
+        # Initialize database and ensure it's ready
+        await multi_user_db.initialize()
+
+        # Initialize rate limiter and other services
         await self.initialize()
 
-        # Start the application
-        await self.application.initialize()
-        await self.application.start()
-        await self.application.updater.start_polling()
+        # Build application with optimized settings for high-load production
+        application = (
+            Application.builder()
+            .token(self.bot_token)
+            .concurrent_updates(256)  # Support more concurrent updates
+            .pool_timeout(30)
+            .connect_timeout(30)
+            .read_timeout(30)
+            .write_timeout(30)
+            .build()
+        )
 
-        logger.info("Multi-user bot is now running!")
+        # Set the application instance before setting up handlers
+        self.application = application
 
-        return self.application
+        # Add all handlers (now that self.application is set)
+        await self._setup_handlers()
+
+        # Add error handler
+        application.add_error_handler(self._error_handler)
+
+        # Optimized polling configuration for production
+        await application.initialize()
+
+        # Start polling with optimized settings
+        logger.info("Starting bot polling with production optimization...")
+        await application.start()
+
+        # Use more efficient polling settings with enhanced error recovery
+        await application.updater.start_polling(
+            poll_interval=2.0,  # Increased from 1.0 to reduce CPU usage
+            timeout=20,  # Timeout for getting updates
+            drop_pending_updates=True,  # Clear pending updates to avoid backlog
+            allowed_updates=[
+                "message",
+                "callback_query",
+                "inline_query",
+            ],  # Only handle needed updates
+        )
+
+        # Start background cleanup task for memory optimization
+        asyncio.create_task(self._periodic_cleanup())
+
+        logger.info("Multi-User Trading Bot started successfully!")
+        logger.info(f"Bot username: @{application.bot.username}")
+
+        return application
+
+    async def _periodic_cleanup(self):
+        """Periodic cleanup task to optimize memory usage"""
+        while True:
+            try:
+                await asyncio.sleep(300)  # Run every 5 minutes
+
+                # Clean up old rate limit data
+                current_time = time.time()
+                expired_users = []
+
+                for telegram_id, rate_data in self.rate_limits.items():
+                    if (
+                        current_time - rate_data.get("last_request", 0) > 3600
+                    ):  # 1 hour old
+                        expired_users.append(telegram_id)
+
+                for telegram_id in expired_users:
+                    del self.rate_limits[telegram_id]
+
+                if expired_users:
+                    logger.debug(
+                        f"Cleaned up rate limit data for {len(expired_users)} inactive users"
+                    )
+
+                # Clean up old user contexts
+                expired_contexts = []
+                for telegram_id, context in self.active_users.items():
+                    if hasattr(context, "last_activity"):
+                        if (
+                            current_time - context.last_activity.timestamp() > 1800
+                        ):  # 30 minutes old
+                            expired_contexts.append(telegram_id)
+
+                for telegram_id in expired_contexts:
+                    del self.active_users[telegram_id]
+
+                if expired_contexts:
+                    logger.debug(
+                        f"Cleaned up contexts for {len(expired_contexts)} inactive users"
+                    )
+
+                # Force garbage collection if too many objects
+                import gc
+
+                if len(gc.get_objects()) > 50000:  # High object count
+                    gc.collect()
+                    logger.debug("Performed garbage collection for memory optimization")
+
+            except Exception as e:
+                logger.error(f"Error in periodic cleanup: {e}")
+                await asyncio.sleep(60)  # Wait before retrying
 
     async def stop(self):
         """Stop the bot gracefully"""
         logger.info("Stopping multi-user bot...")
 
-        # Stop notification workers
-        for worker in self.notification_workers:
-            worker.cancel()
+        try:
+            # Set maintenance mode to stop accepting new requests
+            self.maintenance_mode = True
 
-        # Stop the application
-        if self.application:
-            await self.application.stop()
+            # Wait a moment for current operations to complete
+            await asyncio.sleep(1.0)
 
-        logger.info("Multi-user bot stopped")
+            # Stop notification workers
+            logger.info("Stopping notification workers...")
+            for worker in self.notification_workers:
+                worker.cancel()
+
+            # Wait for workers to stop
+            if self.notification_workers:
+                try:
+                    await asyncio.wait_for(
+                        asyncio.gather(
+                            *self.notification_workers, return_exceptions=True
+                        ),
+                        timeout=5.0,
+                    )
+                except asyncio.TimeoutError:
+                    logger.warning(
+                        "Some notification workers didn't stop within timeout"
+                    )
+
+            # Cancel periodic cleanup task if running
+            logger.info("Stopping background tasks...")
+            for task in asyncio.all_tasks():
+                if hasattr(task, "get_name") and "periodic_cleanup" in task.get_name():
+                    task.cancel()
+
+            # Stop the telegram application gracefully
+            if self.application:
+                logger.info("Stopping Telegram application...")
+                try:
+                    # Stop polling first
+                    if self.application.updater.running:
+                        await self.application.updater.stop()
+
+                    # Then stop the application
+                    await self.application.stop()
+
+                    # Finally shutdown the application
+                    await self.application.shutdown()
+
+                except Exception as e:
+                    logger.error(f"Error stopping Telegram application: {e}")
+
+            # Clear remaining queues and caches
+            logger.info("Clearing remaining data...")
+            try:
+                # Clear message queue
+                while not self.message_queue.empty():
+                    try:
+                        self.message_queue.get_nowait()
+                    except asyncio.QueueEmpty:
+                        break
+
+                # Clear user contexts
+                self.active_users.clear()
+                self.rate_limits.clear()
+
+            except Exception as e:
+                logger.error(f"Error clearing bot data: {e}")
+
+            logger.info("Multi-user bot stopped gracefully")
+
+        except Exception as e:
+            logger.error(f"Error during bot shutdown: {e}")
+            # Force stop if graceful shutdown fails
+            if self.application:
+                try:
+                    await self.application.stop()
+                except Exception as force_error:
+                    logger.error(f"Error in force stop: {force_error}")
 
     def get_system_stats(self) -> Dict:
         """Get current system statistics"""
@@ -1623,4 +2250,4 @@ Time: {datetime.now().strftime('%H:%M:%S')}"""
 
 
 # Global bot instance
-multi_user_bot = MultiUserTradingBot
+multi_user_bot = None  # Will be set by production_main.py after instantiation

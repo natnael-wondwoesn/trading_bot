@@ -608,4 +608,16 @@ class UserService:
 
 
 # Global user service instance
-user_service = UserService()
+user_service = None
+
+
+def get_user_service():
+    """Get or create the global user service instance"""
+    global user_service
+    if user_service is None:
+        user_service = UserService()
+    return user_service
+
+
+# Initialize global instance
+user_service = get_user_service()

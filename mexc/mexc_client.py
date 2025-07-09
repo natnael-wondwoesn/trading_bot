@@ -19,6 +19,25 @@ class MEXCClient:
     BASE_URL = "https://api.mexc.com"
     WS_URL = "wss://wbs.mexc.com/ws"
 
+    # MEXC interval mapping
+    INTERVAL_MAP = {
+        "1m": "Min1",
+        "3m": "Min3",
+        "5m": "Min5",
+        "15m": "Min15",
+        "30m": "Min30",
+        "1h": "Min60",
+        "2h": "Min120",
+        "4h": "Hour4",
+        "6h": "Hour6",
+        "8h": "Hour8",
+        "12h": "Hour12",
+        "1d": "Day1",
+        "3d": "Day3",
+        "1w": "Week1",
+        "1M": "Month1",
+    }
+
     def __init__(self, api_key: str, api_secret: str):
         self.api_key = api_key
         self.api_secret = api_secret
@@ -91,7 +110,10 @@ class MEXCClient:
         self, symbol: str, interval: str = "1h", limit: int = 100
     ) -> pd.DataFrame:
         """Get candlestick data"""
-        params = {"symbol": symbol, "interval": interval, "limit": limit}
+        # Convert interval to MEXC format
+        mexc_interval = self.INTERVAL_MAP.get(interval, interval)
+
+        params = {"symbol": symbol, "interval": mexc_interval, "limit": limit}
 
         data = await self._request("GET", "/api/v3/klines", params, signed=True)
 
@@ -240,12 +262,15 @@ class MEXCClient:
         if not self.ws_connection:
             await self.start_websocket()
 
+        # Convert interval to MEXC format
+        mexc_interval = self.INTERVAL_MAP.get(interval, interval)
+
         subscribe_msg = {
             "method": "SUBSCRIPTION",
-            "params": [f"spot@public.kline.v3.api@{symbol}@{interval}"],
+            "params": [f"spot@public.kline.v3.api@{symbol}@{mexc_interval}"],
         }
         await self.ws_connection.send_json(subscribe_msg)
-        logger.info(f"Subscribed to {interval} kline updates for {symbol}")
+        logger.info(f"Subscribed to {mexc_interval} kline updates for {symbol}")
 
     async def read_websocket(self):
         """Read messages from WebSocket"""

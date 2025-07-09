@@ -39,6 +39,7 @@ class User:
 class UserSettings:
     user_id: int
     strategy: str
+    exchange: str
     risk_management: Dict
     notifications: Dict
     emergency: Dict
@@ -112,6 +113,47 @@ class MultiUserDatabase:
         self._initialized = True
         logger.info(f"Database initialized with {self.max_connections} connections")
 
+    async def shutdown(self):
+        """Properly shutdown database and close all connections"""
+        if not self._initialized:
+            return
+
+        logger.info("Shutting down database connections...")
+
+        try:
+            # Close all connections in the pool
+            closed_connections = 0
+            while not self._connection_pool.empty():
+                try:
+                    conn = await asyncio.wait_for(
+                        self._connection_pool.get(), timeout=1.0
+                    )
+                    await conn.close()
+                    closed_connections += 1
+                except asyncio.TimeoutError:
+                    logger.warning(
+                        "Timeout waiting for connection from pool during shutdown"
+                    )
+                    break
+                except Exception as e:
+                    logger.error(f"Error closing database connection: {e}")
+
+            logger.info(f"Closed {closed_connections} database connections")
+
+        except Exception as e:
+            logger.error(f"Error during database shutdown: {e}")
+        finally:
+            self._initialized = False
+
+    async def __aenter__(self):
+        """Async context manager entry"""
+        await self.initialize()
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit"""
+        await self.shutdown()
+
     @asynccontextmanager
     async def get_connection(self):
         """Get database connection from pool"""
@@ -154,6 +196,7 @@ class MultiUserDatabase:
             CREATE TABLE IF NOT EXISTS user_settings (
                 user_id INTEGER PRIMARY KEY,
                 strategy TEXT DEFAULT 'RSI_EMA',
+                exchange TEXT DEFAULT 'MEXC',
                 risk_management TEXT DEFAULT '{}',
                 notifications TEXT DEFAULT '{}',
                 emergency TEXT DEFAULT '{}',
@@ -381,10 +424,11 @@ class MultiUserDatabase:
                 return UserSettings(
                     user_id=row[0],
                     strategy=row[1],
-                    risk_management=json.loads(row[2]),
-                    notifications=json.loads(row[3]),
-                    emergency=json.loads(row[4]),
-                    last_updated=datetime.fromisoformat(row[5]),
+                    exchange=row[2],
+                    risk_management=json.loads(row[3]),
+                    notifications=json.loads(row[4]),
+                    emergency=json.loads(row[5]),
+                    last_updated=datetime.fromisoformat(row[6]),
                 )
             return None
 
@@ -742,11 +786,12 @@ class MultiUserDatabase:
 
         await db.execute(
             """
-            INSERT INTO user_settings (user_id, risk_management, notifications, emergency)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO user_settings (user_id, exchange, risk_management, notifications, emergency)
+            VALUES (?, ?, ?, ?, ?)
         """,
             (
                 user_id,
+                "MEXC",  # Default exchange
                 json.dumps(default_risk),
                 json.dumps(default_notifications),
                 json.dumps(default_emergency),

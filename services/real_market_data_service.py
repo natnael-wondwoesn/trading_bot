@@ -55,7 +55,7 @@ class RealMarketDataService:
             # Test API connectivity
             exchange_info = await self.mexc_client.get_exchange_info()
             logger.info(
-                f"✓ Connected to MEXC API (Server time: {datetime.fromtimestamp(exchange_info['serverTime']/1000)})"
+                f"[OK] Connected to MEXC API (Server time: {datetime.fromtimestamp(exchange_info['serverTime']/1000)})"
             )
 
             # Verify trading pairs are available
@@ -65,9 +65,9 @@ class RealMarketDataService:
             for pair in self.trading_pairs:
                 if pair in available_symbols:
                     valid_pairs.append(pair)
-                    logger.info(f"✓ {pair}: Available for trading")
+                    logger.info(f"[OK] {pair}: Available for trading")
                 else:
-                    logger.warning(f"⚠️  {pair}: Not available on MEXC")
+                    logger.warning(f"[WARN] {pair}: Not available on MEXC")
 
             self.trading_pairs = valid_pairs
 
@@ -87,7 +87,7 @@ class RealMarketDataService:
                     self.latest_prices[pair] = float(ticker["lastPrice"])
 
                     logger.info(
-                        f"✓ {pair}: Loaded {len(klines)} candles, current price: ${self.latest_prices[pair]:,.4f}"
+                        f"[OK] {pair}: Loaded {len(klines)} candles, current price: ${self.latest_prices[pair]:,.4f}"
                     )
 
                 except Exception as e:
@@ -132,7 +132,7 @@ class RealMarketDataService:
             asyncio.create_task(self._periodic_data_refresh())
 
             logger.info(
-                f"✓ Real-time data feed started for {len(self.trading_pairs)} pairs"
+                f"[OK] Real-time data feed started for {len(self.trading_pairs)} pairs"
             )
 
         except Exception as e:
@@ -153,7 +153,7 @@ class RealMarketDataService:
             if self.mexc_client and self.mexc_client.session:
                 await self.mexc_client.session.close()
 
-            logger.info("✓ Market data service stopped")
+            logger.info("[OK] Market data service stopped")
 
         except Exception as e:
             logger.error(f"Error stopping market data service: {e}")

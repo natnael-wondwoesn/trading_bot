@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-Trading Orchestrator - Manages isolated trading sessions for thousands of users
-Each user gets their own isolated trading environment with individual settings and risk management
+Trading Orchestrator Service
+Manages trading sessions for thousands of users with real-time signal processing
+Supports multiple exchanges (MEXC, Bybit) per user
 """
 
 import asyncio
@@ -22,6 +23,9 @@ from strategy.strategies.bollinger_strategy import BollingerStrategy
 from strategy.strategies.macd_strategy import MACDStrategy
 from strategy.strategies.rsi_ema_strategy import RSIEMAStrategy
 from strategy.strategies.strategy import Strategy
+from exchange_factory import ExchangeFactory, get_user_exchange_suite
+from exchange_interface import BaseExchangeClient, BaseDataFeed, BaseTradeExecutor
+from config.config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +48,44 @@ class UserTradingSession:
     emergency_mode: bool = False
     trading_enabled: bool = True
     performance_metrics: Dict = field(default_factory=dict)
+    exchange_client: Optional[BaseExchangeClient] = None
+    data_feed: Optional[BaseDataFeed] = None
+    trade_executor: Optional[BaseTradeExecutor] = None
+
+
+async def get_user_exchange_suite(
+    user_id: int, settings: Dict
+) -> Tuple[BaseExchangeClient, BaseDataFeed, BaseTradeExecutor]:
+    """Get exchange suite for user based on their settings"""
+    try:
+        # Get user's selected exchange
+        exchange_name = settings.get("exchange", Config.DEFAULT_EXCHANGE)
+
+        # Validate exchange is available
+        available_exchanges = ExchangeFactory.get_available_exchanges()
+        if exchange_name.upper() not in available_exchanges:
+            logger.warning(
+                f"User {user_id} exchange {exchange_name} not available, using default"
+            )
+            exchange_name = ExchangeFactory.get_default_exchange()
+
+        # Create exchange suite
+        client, data_feed, executor = ExchangeFactory.create_exchange_suite(
+            exchange_name
+        )
+
+        logger.info(f"Created {exchange_name} exchange suite for user {user_id}")
+        return client, data_feed, executor
+
+    except Exception as e:
+        logger.error(f"Failed to create exchange suite for user {user_id}: {e}")
+        # Fallback to default exchange
+        try:
+            default_exchange = ExchangeFactory.get_default_exchange()
+            return ExchangeFactory.create_exchange_suite(default_exchange)
+        except Exception as fallback_error:
+            logger.error(f"Failed to create fallback exchange suite: {fallback_error}")
+            raise
 
 
 class UserRiskManager:
@@ -301,6 +343,9 @@ class TradingOrchestrator:
             active_trades = await multi_user_db.get_user_open_trades(user_id)
             trades_dict = {trade.trade_id: trade for trade in active_trades}
 
+            # Initialize exchange suite
+            exchange_suite = await get_user_exchange_suite(user_id, settings)
+
             session = UserTradingSession(
                 user_id=user_id,
                 telegram_id=telegram_id,
@@ -308,6 +353,9 @@ class TradingOrchestrator:
                 settings=settings.__dict__,
                 risk_manager=risk_manager,
                 active_trades=trades_dict,
+                exchange_client=exchange_suite[0],
+                data_feed=exchange_suite[1],
+                trade_executor=exchange_suite[2],
             )
 
             self.user_sessions[user_id] = session
@@ -455,7 +503,7 @@ class TradingOrchestrator:
                 await asyncio.sleep(1)
 
     async def _execute_signal(self, session: UserTradingSession, signal: Signal):
-        """Execute trading signal for user"""
+        """Execute trading signal for user using their selected exchange"""
         try:
             # Final risk check
             allowed, reason = await session.risk_manager.check_trade_allowed(signal)
@@ -464,46 +512,116 @@ class TradingOrchestrator:
                 logger.info(f"Trade blocked for user {session.user_id}: {reason}")
                 return
 
+            # Check if exchange is available
+            if not session.trade_executor:
+                logger.error(f"No trade executor available for user {session.user_id}")
+                return
+
+            # Get account balance from user's exchange
+            try:
+                balances = await session.exchange_client.get_balances()
+                # Get USDT balance for position sizing
+                usdt_balance = balances.get("USDT", {"free": 0})["free"]
+                account_balance = usdt_balance
+            except Exception as e:
+                logger.error(f"Failed to get balance for user {session.user_id}: {e}")
+                account_balance = 1000.0  # Fallback value
+
             # Calculate position size
-            # Note: You'd need to implement account balance tracking
-            account_balance = 10000.0  # Placeholder - implement proper balance tracking
             position_size = await session.risk_manager.calculate_position_size(
                 signal, account_balance
             )
+
+            # Get current market price
+            try:
+                ticker = await session.exchange_client.get_ticker(signal.symbol)
+                current_price = float(ticker.get("lastPrice", signal.price))
+            except Exception as e:
+                logger.error(f"Failed to get current price for {signal.symbol}: {e}")
+                current_price = signal.price
 
             # Calculate stop loss and take profit
             stop_loss, take_profit = self._calculate_stop_profit_levels(
                 signal, session.settings
             )
 
-            # Create trade record
+            # Execute the trade on user's exchange
+            try:
+                if signal.action.upper() == "BUY":
+                    order_result = await session.trade_executor.execute_market_order(
+                        symbol=signal.symbol, side="Buy", quantity=position_size
+                    )
+                elif signal.action.upper() == "SELL":
+                    order_result = await session.trade_executor.execute_market_order(
+                        symbol=signal.symbol, side="Sell", quantity=position_size
+                    )
+                else:
+                    logger.warning(f"Unknown signal action: {signal.action}")
+                    return
+
+                # Extract execution details
+                executed_price = float(order_result.get("price", current_price))
+                executed_quantity = float(order_result.get("quantity", position_size))
+                order_id = order_result.get("order_id", "")
+
+                logger.info(
+                    f"Trade executed on exchange for user {session.user_id}: "
+                    f"{signal.action} {executed_quantity} {signal.symbol} at {executed_price}"
+                )
+
+            except Exception as e:
+                logger.error(
+                    f"Failed to execute trade on exchange for user {session.user_id}: {e}"
+                )
+                # Still create a database record for tracking
+                executed_price = current_price
+                executed_quantity = position_size
+                order_id = f"failed_{datetime.now().timestamp()}"
+
+            # Create trade record in database
             trade_id = await multi_user_db.create_trade(
                 user_id=session.user_id,
                 symbol=signal.symbol,
                 side=signal.action,
-                entry_price=signal.price,
-                quantity=position_size,
+                entry_price=executed_price,
+                quantity=executed_quantity,
                 stop_loss=stop_loss,
                 take_profit=take_profit,
                 signal_confidence=signal.confidence,
             )
 
+            # Store order ID in session for tracking
+            if trade_id not in session.active_trades:
+                session.active_trades[trade_id] = {
+                    "order_id": order_id,
+                    "entry_price": executed_price,
+                    "quantity": executed_quantity,
+                    "exchange": session.settings.get("exchange", "MEXC"),
+                }
+
             # Update session
             session.last_signal = signal
             session.last_trade = datetime.now()
 
-            # Send notification to user
-            await multi_user_bot.send_signal_to_user(session.telegram_id, signal)
+            # Send notification to user via Telegram bot
+            try:
+                from services.multi_user_bot import multi_user_bot
+
+                await multi_user_bot.send_signal_to_user(session.telegram_id, signal)
+            except ImportError:
+                logger.warning("Multi-user bot not available for notifications")
 
             # Update performance stats
             self.performance_stats["total_trades_executed"] += 1
 
             logger.info(
-                f"Executed trade {trade_id} for user {session.user_id}: {signal.action} {signal.symbol}"
+                f"Executed trade {trade_id} for user {session.user_id}: "
+                f"{signal.action} {executed_quantity} {signal.symbol} on {session.settings.get('exchange', 'MEXC')}"
             )
 
         except Exception as e:
             logger.error(f"Error executing signal for user {session.user_id}: {e}")
+            self.performance_stats["error_count"] += 1
 
     def _calculate_stop_profit_levels(
         self, signal: Signal, settings: Dict
@@ -543,6 +661,7 @@ class TradingOrchestrator:
             # Reload settings
             settings = await user_service.get_user_settings(user_id)
             if settings:
+                old_settings = session.settings.copy()
                 session.settings = settings.__dict__
 
                 # Update strategy if changed
@@ -551,11 +670,47 @@ class TradingOrchestrator:
                     session.strategy = StrategyFactory.create_strategy(
                         current_strategy, settings.__dict__
                     )
+                    logger.info(
+                        f"Updated strategy for user {user_id} to {current_strategy}"
+                    )
+
+                # Update exchange if changed
+                old_exchange = old_settings.get("exchange", "MEXC")
+                new_exchange = settings.__dict__.get("exchange", "MEXC")
+
+                if old_exchange != new_exchange:
+                    try:
+                        # Close existing exchange connections
+                        if session.exchange_client:
+                            await session.exchange_client.close()
+
+                        # Create new exchange suite
+                        client, data_feed, executor = await get_user_exchange_suite(
+                            user_id, settings.__dict__
+                        )
+
+                        session.exchange_client = client
+                        session.data_feed = data_feed
+                        session.trade_executor = executor
+
+                        logger.info(
+                            f"Updated exchange for user {user_id} from {old_exchange} to {new_exchange}"
+                        )
+
+                    except Exception as e:
+                        logger.error(
+                            f"Failed to update exchange for user {user_id}: {e}"
+                        )
+                        # Keep old exchange connections if update fails
 
                 # Update risk manager
                 session.risk_manager.settings = settings.__dict__
 
                 logger.info(f"Updated settings for user {user_id}")
+            else:
+                logger.warning(f"No settings found for user {user_id}")
+        else:
+            logger.warning(f"No active session found for user {user_id}")
 
     async def activate_emergency_mode(self, user_id: int):
         """Activate emergency mode for user"""

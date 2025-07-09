@@ -12,6 +12,11 @@ class Config:
     MEXC_API_KEY = os.getenv("MEXC_API_KEY")
     MEXC_API_SECRET = os.getenv("MEXC_API_SECRET")
 
+    # Bybit API Settings
+    BYBIT_API_KEY = os.getenv("BYBIT_API_KEY")
+    BYBIT_API_SECRET = os.getenv("BYBIT_API_SECRET")
+    BYBIT_TESTNET = os.getenv("BYBIT_TESTNET", "false").lower() == "true"
+
     # Telegram Bot Settings
     TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
     TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
@@ -20,6 +25,7 @@ class Config:
     DEFAULT_POSITION_SIZE = 25
     MAX_RISK_PER_TRADE = 0.02  # 2%
     DEFAULT_TIMEFRAME = "1h"
+    DEFAULT_EXCHANGE = "MEXC"  # Options: "MEXC", "BYBIT"
 
     # Trading Pairs
     TRADING_PAIRS = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "ADAUSDT"]
@@ -53,10 +59,13 @@ class Config:
     @classmethod
     def validate(cls):
         """Validate required configuration"""
-        if not cls.MEXC_API_KEY:
-            raise ValueError("MEXC_API_KEY not set in environment")
-        if not cls.MEXC_API_SECRET:
-            raise ValueError("MEXC_API_SECRET not set in environment")
+        # Check if at least one exchange is configured
+        mexc_configured = cls.MEXC_API_KEY and cls.MEXC_API_SECRET
+        bybit_configured = cls.BYBIT_API_KEY and cls.BYBIT_API_SECRET
+
+        if not mexc_configured and not bybit_configured:
+            raise ValueError("At least one exchange (MEXC or Bybit) must be configured")
+
         if not cls.TELEGRAM_BOT_TOKEN:
             raise ValueError("TELEGRAM_BOT_TOKEN not set in environment")
         if not cls.TELEGRAM_CHAT_ID:

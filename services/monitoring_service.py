@@ -223,6 +223,7 @@ class HealthChecker:
     def __init__(self, alert_manager: AlertManager):
         self.alert_manager = alert_manager
         self.health_metrics: Dict[str, HealthMetric] = {}
+        self._start_time = time.time()  # Store start time for uptime calculation
 
     async def check_system_health(self) -> Dict[str, HealthMetric]:
         """Perform comprehensive system health check"""
@@ -389,73 +390,194 @@ class HealthChecker:
     async def _check_bot_health(self):
         """Check Telegram bot health"""
         try:
-            from services.multi_user_bot import multi_user_bot
+            # Multiple ways to check if bot is running and healthy
+            bot_instance = None
+            bot_stats = None
 
-            # Check if bot is initialized and running
-            if hasattr(multi_user_bot, "application") and multi_user_bot.application:
-                stats = multi_user_bot.get_system_stats()
+            # Method 1: Try to import and check the global bot instance
+            try:
+                from services.multi_user_bot import multi_user_bot
 
-                metric = HealthMetric(
+                if (
+                    hasattr(multi_user_bot, "application")
+                    and multi_user_bot.application
+                ):
+                    if hasattr(multi_user_bot, "get_system_stats"):
+                        bot_stats = multi_user_bot.get_system_stats()
+                        bot_instance = multi_user_bot
+            except (ImportError, AttributeError, NameError) as e:
+                logger.debug(f"Method 1 bot check failed: {e}")
+
+            # Method 2: Try to check production service registry
+            if not bot_instance:
+                try:
+                    # Check if we can access the production service's bot registry
+                    import production_main
+
+                    if hasattr(production_main, "service_instance"):
+                        service = production_main.service_instance
+                        if hasattr(service, "services") and "bot" in service.services:
+                            bot_instance = service.services["bot"]
+                            if hasattr(bot_instance, "get_system_stats"):
+                                bot_stats = bot_instance.get_system_stats()
+                except (ImportError, AttributeError, NameError) as e:
+                    logger.debug(f"Method 2 bot check failed: {e}")
+
+            # Method 3: Check global variable registry (fallback)
+            if not bot_instance:
+                try:
+                    import sys
+
+                    for module_name, module in sys.modules.items():
+                        if "bot" in module_name and hasattr(module, "application"):
+                            if module.application and hasattr(
+                                module, "get_system_stats"
+                            ):
+                                bot_stats = module.get_system_stats()
+                                bot_instance = module
+                                break
+                except Exception as e:
+                    logger.debug(f"Method 3 bot check failed: {e}")
+
+            # If we found a bot instance and got stats, bot is healthy
+            if bot_instance and bot_stats:
+                # Check if stats indicate healthy operation
+                active_users = bot_stats.get("active_users_24h", 0)
+                messages_sent = bot_stats.get("messages_sent_today", 0)
+                errors_today = bot_stats.get("errors_today", 0)
+                commands_processed = bot_stats.get("commands_processed_today", 0)
+
+                # Create detailed health metrics
+                bot_health_metric = HealthMetric(
+                    name="bot_health",
+                    value=1,
+                    status="healthy",
+                    threshold_warning=1,
+                    threshold_critical=1,
+                    message=f"Bot operational - {active_users} active users, {commands_processed} commands processed",
+                )
+
+                # Check for warning conditions
+                if errors_today > 10:  # More than 10 errors today
+                    bot_health_metric.status = "warning"
+                    bot_health_metric.message = (
+                        f"Bot running but high error count: {errors_today} errors today"
+                    )
+
+                # Check for critical conditions
+                if errors_today > 50:  # Very high error count
+                    bot_health_metric.status = "critical"
+                    bot_health_metric.message = (
+                        f"Bot critical error rate: {errors_today} errors today"
+                    )
+                    await self.alert_manager.create_alert(
+                        "critical",
+                        "bot",
+                        bot_health_metric.message,
+                        {"error_count": errors_today},
+                    )
+
+                self.health_metrics["bot_health"] = bot_health_metric
+
+                # Additional metrics for monitoring
+                user_metric = HealthMetric(
                     name="bot_active_users",
-                    value=stats.get("active_contexts", 0),
+                    value=active_users,
                     status="healthy",
                     threshold_warning=500,
                     threshold_critical=900,
                 )
 
-                if stats.get("active_contexts", 0) > metric.threshold_critical:
-                    metric.status = "critical"
-                    metric.message = (
-                        f"Bot user load critical: {stats['active_contexts']} users"
+                if active_users > user_metric.threshold_critical:
+                    user_metric.status = "critical"
+                    user_metric.message = (
+                        f"Bot user load critical: {active_users} users"
                     )
-                elif stats.get("active_contexts", 0) > metric.threshold_warning:
-                    metric.status = "warning"
-                    metric.message = (
-                        f"Bot user load high: {stats['active_contexts']} users"
-                    )
-
-                self.health_metrics["bot_active_users"] = metric
-
-                # Check message queue size
-                queue_size = stats.get("queue_size", 0)
-                queue_metric = HealthMetric(
-                    name="bot_queue_size",
-                    value=queue_size,
-                    status="healthy",
-                    threshold_warning=1000,
-                    threshold_critical=5000,
-                )
-
-                if queue_size > queue_metric.threshold_critical:
-                    queue_metric.status = "critical"
-                    queue_metric.message = f"Bot queue size critical: {queue_size}"
                     await self.alert_manager.create_alert(
                         "critical",
                         "bot",
-                        queue_metric.message,
-                        {"queue_size": queue_size},
+                        user_metric.message,
+                        {"active_users": active_users},
                     )
-                elif queue_size > queue_metric.threshold_warning:
-                    queue_metric.status = "warning"
-                    queue_metric.message = f"Bot queue size high: {queue_size}"
+                elif active_users > user_metric.threshold_warning:
+                    user_metric.status = "warning"
+                    user_metric.message = f"Bot user load high: {active_users} users"
 
-                self.health_metrics["bot_queue_size"] = queue_metric
+                self.health_metrics["bot_active_users"] = user_metric
+
             else:
-                raise Exception("Bot not initialized")
+                # Bot might be starting up or not fully initialized
+                # Check how long the system has been running
+                uptime_seconds = time.time() - getattr(self, "_start_time", time.time())
+
+                if uptime_seconds < 60:  # Less than 1 minute uptime
+                    # System is starting up, this is normal
+                    metric = HealthMetric(
+                        name="bot_health",
+                        value=0.5,
+                        status="warning",
+                        threshold_warning=1,
+                        threshold_critical=1,
+                        message="Bot initializing (system startup in progress)",
+                    )
+                elif uptime_seconds < 300:  # Less than 5 minutes uptime
+                    # Still in startup phase but taking longer
+                    metric = HealthMetric(
+                        name="bot_health",
+                        value=0.3,
+                        status="warning",
+                        threshold_warning=1,
+                        threshold_critical=1,
+                        message="Bot initialization taking longer than expected",
+                    )
+                else:
+                    # System has been running for a while, bot should be available
+                    metric = HealthMetric(
+                        name="bot_health",
+                        value=0,
+                        status="critical",
+                        threshold_warning=1,
+                        threshold_critical=1,
+                        message="Bot not accessible after startup period",
+                    )
+                    # Only alert for real failures, not startup delays
+                    if uptime_seconds > 300:  # 5 minutes
+                        await self.alert_manager.create_alert(
+                            "critical",
+                            "bot",
+                            metric.message,
+                            {"uptime_seconds": uptime_seconds},
+                        )
+
+                self.health_metrics["bot_health"] = metric
 
         except Exception as e:
-            metric = HealthMetric(
-                name="bot_health",
-                value=0,
-                status="critical",
-                threshold_warning=1,
-                threshold_critical=1,
-                message=f"Bot health check failed: {str(e)}",
-            )
+            logger.error(f"Bot health check exception: {e}")
+            # Determine if this is a startup issue or real failure
+            uptime_seconds = time.time() - getattr(self, "_start_time", time.time())
 
-            await self.alert_manager.create_alert(
-                "critical", "bot", metric.message, {"error": str(e)}
-            )
+            if uptime_seconds < 120:  # Less than 2 minutes, probably startup
+                metric = HealthMetric(
+                    name="bot_health",
+                    value=0.2,
+                    status="warning",
+                    threshold_warning=1,
+                    threshold_critical=1,
+                    message=f"Bot health check failed during startup: {str(e)[:100]}",
+                )
+            else:
+                metric = HealthMetric(
+                    name="bot_health",
+                    value=0,
+                    status="critical",
+                    threshold_warning=1,
+                    threshold_critical=1,
+                    message=f"Bot health check failed: {str(e)[:100]}",
+                )
+                # Only alert for real failures
+                await self.alert_manager.create_alert(
+                    "critical", "bot", metric.message, {"error": str(e)}
+                )
 
             self.health_metrics["bot_health"] = metric
 

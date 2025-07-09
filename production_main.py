@@ -20,6 +20,7 @@ from services.user_service import user_service
 from services.multi_user_bot import MultiUserTradingBot
 from services.trading_orchestrator import trading_orchestrator
 from services.monitoring_service import monitoring_service
+from services.real_market_data_service import real_market_data_service
 from db.multi_user_db import multi_user_db
 
 # Configure logging
@@ -153,6 +154,39 @@ class ProductionTradingService:
             except Exception as e:
                 return JSONResponse(status_code=500, content={"error": str(e)})
 
+        @self.app.get("/market/prices")
+        async def get_current_prices():
+            """Get current market prices for all monitored pairs"""
+            try:
+                prices = real_market_data_service.get_current_prices()
+                stats = real_market_data_service.get_service_stats()
+                return JSONResponse(
+                    content={
+                        "prices": prices,
+                        "service_status": {
+                            "running": stats["running"],
+                            "trading_pairs": stats["trading_pairs"],
+                            "data_updates": stats["data_updates"],
+                            "signals_generated": stats["signals_generated"],
+                            "uptime_seconds": stats["uptime_seconds"],
+                        },
+                        "timestamp": datetime.now().isoformat(),
+                    }
+                )
+            except Exception as e:
+                logger.error(f"Error getting market prices: {e}")
+                return JSONResponse(status_code=500, content={"error": str(e)})
+
+        @self.app.post("/admin/force_signals")
+        async def force_signal_generation():
+            """Force signal generation for all pairs (testing)"""
+            try:
+                result = await self._force_signal_generation()
+                return JSONResponse(content=result)
+            except Exception as e:
+                logger.error(f"Error forcing signals: {e}")
+                return JSONResponse(status_code=500, content={"error": str(e)})
+
     async def start_all_services(self):
         """Start all services in the correct order"""
         logger.info("Starting Multi-User Trading Service...")
@@ -182,9 +216,12 @@ class ProductionTradingService:
             self.services["bot"] = bot
             self.services["bot_app"] = bot_app
 
-            # 6. Start background tasks
-            logger.info("Step 6: Starting background tasks...")
-            asyncio.create_task(self._market_data_simulation())
+            # 6. Start real market data service
+            logger.info("Step 6: Starting real market data service...")
+            await real_market_data_service.start()
+
+            # 7. Start background tasks
+            logger.info("Step 7: Starting background tasks...")
             asyncio.create_task(self._periodic_maintenance())
 
             self.running = True
@@ -212,6 +249,9 @@ class ProductionTradingService:
                 logger.info("Stopping Telegram bot...")
                 await self.services["bot"].stop()
 
+            logger.info("Stopping real market data service...")
+            await real_market_data_service.stop()
+
             logger.info("Stopping monitoring service...")
             await monitoring_service.stop()
 
@@ -226,35 +266,14 @@ class ProductionTradingService:
         except Exception as e:
             logger.error(f"❌ Error during shutdown: {e}")
 
-    async def _market_data_simulation(self):
-        """Simulate market data for development/testing"""
-        # This would be replaced with real market data feeds in production
-        logger.info("Starting market data simulation...")
-
-        symbols = ["BTCUSDT", "ETHUSDT", "ADAUSDT", "DOGEUSDT"]
-
-        while self.running:
-            try:
-                for symbol in symbols:
-                    # Simulate market data
-                    market_data = {
-                        "symbol": symbol,
-                        "price": 50000.0 + (hash(symbol) % 10000),  # Fake price
-                        "volume": 1000000.0,
-                        "timestamp": datetime.now().isoformat(),
-                    }
-
-                    # Process signals for all users
-                    await trading_orchestrator.process_market_signal(
-                        symbol, market_data
-                    )
-
-                # Wait before next cycle
-                await asyncio.sleep(60)  # Process every minute
-
-            except Exception as e:
-                logger.error(f"Error in market data simulation: {e}")
-                await asyncio.sleep(30)
+    async def _force_signal_generation(self):
+        """Force signal generation for testing purposes"""
+        try:
+            await real_market_data_service.force_signal_generation()
+            return {"status": "success", "message": "Signals generated for all pairs"}
+        except Exception as e:
+            logger.error(f"Error forcing signal generation: {e}")
+            return {"status": "error", "message": str(e)}
 
     async def _periodic_maintenance(self):
         """Perform periodic maintenance tasks"""

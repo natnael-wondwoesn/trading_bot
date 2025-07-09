@@ -785,7 +785,17 @@ Ready to upgrade your trading experience?"""
 
         action_type = data_parts[0]
         action = data_parts[1]
-        user_id = int(data_parts[2])
+
+        # Handle different callback data formats
+        if action_type == "strategy" and action == "select":
+            # Format: strategy_select_STRATEGY_NAME_user_id
+            if len(data_parts) < 4:
+                await query.edit_message_text("Invalid strategy selection.")
+                return
+            user_id = int(data_parts[3])
+        else:
+            # Standard format: action_type_action_user_id
+            user_id = int(data_parts[2])
 
         # Verify user ID matches
         if user_id != user_context.user.user_id:
@@ -1129,7 +1139,9 @@ Ready to upgrade your trading experience?"""
                 # Callback format: strategy_select_STRATEGY_NAME_user_id
                 data_parts = query.data.split("_")
                 if len(data_parts) >= 4:
-                    strategy_name = data_parts[2]  # Extract strategy name
+                    strategy_name = data_parts[
+                        2
+                    ]  # Extract strategy name from position 2
 
                     # Update user's strategy setting
                     await user_service.update_user_settings(

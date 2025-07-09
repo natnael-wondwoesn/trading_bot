@@ -14,3 +14,8 @@ trading_bot.log
 debug_bot.log
 trading_bot.log
 logs/trading_service.log
+trading_service.db-wal
+trading_service.db-wal
+trading_service.db-shm
+trading_service.db
+trading_service.db-shm

@@ -242,6 +242,10 @@ class TradingOrchestrator:
         # Active monitoring
         self.is_running = False
 
+    async def start(self):
+        """Start the trading orchestrator"""
+        await self.initialize()
+
     async def initialize(self):
         """Initialize the trading orchestrator"""
         logger.info("Initializing Trading Orchestrator...")

@@ -1,0 +1,130 @@
+# Render Deployment - Ignore unnecessary files
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Local data and logs
+data/
+logs/
+*.log
+
+# Development files
+.env
+.env.local
+.env.development
+.env.test
+*.example
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Documentation (deploy separately if needed)
+*.md
+docs/
+
+# Test files
+test_*
+*_test.py
+tests/
+pytest_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Development requirements (we use requirements_render.txt)
+requirements_dev.txt
+requirements_dev_minimal.txt
+requirements_dev_safe.txt
+requirements_production.txt
+
+# Old Docker files (we use Dockerfile.render)
+Dockerfile
+docker-compose.yml
+docker-compose.yaml
+
+# Development scripts
+setup_*.py
+debug_*.py
+*_demo.py
+verify_*.py
+
+# User settings and local configs
+user_settings.json
+config.local.py
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Backup files
+*.bak
+*.backup
+*.old
+
+# Large files that aren't needed
+*.zip
+*.tar.gz
+*.rar
+
+# SSL certificates (use environment variables)
+ssl/
+*.pem
+*.key
+*.crt
+
+# Local database files (use persistent disk)
+*.db
+*.sqlite
+*.sqlite3
+
+# Node modules (if any)
+node_modules/
+
+# Jupyter notebooks
+*.ipynb
+.ipynb_checkpoints/ 

@@ -1,0 +1,84 @@
+services:
+  # Main 24/7 Trading Bot Service
+  - type: web
+    name: trading-bot-24-7
+    runtime: docker
+    dockerfilePath: ./Dockerfile.render
+    region: oregon  # Choose region closest to your users
+    plan: standard  # Can be upgraded to pro for more resources
+    healthCheckPath: /health
+    
+    # Auto-scaling and availability
+    autoDeploy: true  # Auto-deploy on git push
+    preDeployCommand: echo "Starting deployment of 24/7 Trading Bot"
+    
+    # Environment variables (set these in Render dashboard)
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: LOG_LEVEL
+        value: INFO
+      - key: MAX_CONCURRENT_USERS
+        value: 1000
+      - key: DATABASE_URL
+        value: /tmp/trading_data/trading_service.db
+      - key: PYTHONUNBUFFERED
+        value: 1
+      - key: PYTHONDONTWRITEBYTECODE
+        value: 1
+        
+    # Resource allocation
+    buildCommand: echo "Building trading bot container..."
+    startCommand: python render_entrypoint.py
+    
+    # Persistent disk for logs and temporary data
+    disk:
+      name: trading-data
+      mountPath: /tmp/trading_data
+      sizeGB: 5  # Adjust as needed
+    
+    # Health check configuration
+    healthCheck:
+      enabled: true
+      path: /health
+      intervalSeconds: 30
+      timeoutSeconds: 10
+      unhealthyThresholdCount: 3
+      healthyThresholdCount: 2
+    
+    # Resource limits (adjust based on your plan)
+    buildFilter:
+      paths:
+        - "**"
+      ignoredPaths:
+        - "*.md"
+        - "venv/**"
+        - "__pycache__/**"
+        - "*.pyc"
+        - ".git/**"
+        - "logs/**"
+        - "data/**"
+
+# External services (recommended for production)
+# Uncomment and configure these for better reliability:
+
+# databases:
+#   - name: trading-bot-redis
+#     databaseName: trading_cache
+#     user: trading_bot
+#     plan: starter  # Redis instance for caching
+#     region: oregon
+
+# Configure these environment variables in Render dashboard:
+# Required:
+# - TELEGRAM_BOT_TOKEN: Your Telegram bot token
+# 
+# Optional (for enhanced functionality):
+# - MEXC_API_KEY: MEXC exchange API key
+# - MEXC_API_SECRET: MEXC exchange API secret
+# - BYBIT_API_KEY: Bybit exchange API key  
+# - BYBIT_API_SECRET: Bybit exchange API secret
+# - SENTRY_DSN: For error tracking
+# - REDIS_URL: Redis connection string (if using external Redis)
+# - WEBHOOK_URL: For notifications
+# - JWT_SECRET_KEY: For user authentication 

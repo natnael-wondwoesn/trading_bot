@@ -120,7 +120,15 @@ class ExchangeFactory:
 
         # Create client instance
         client_class = config["client_class"]
-        client = client_class(api_key, api_secret, testnet)
+
+        # Handle different client constructors
+        if exchange_name == "MEXC":
+            client = client_class(api_key, api_secret)
+        elif exchange_name == "BYBIT":
+            client = client_class(api_key, api_secret, testnet)
+        else:
+            # Default to 3-parameter constructor
+            client = client_class(api_key, api_secret, testnet)
 
         logger.info(f"Created {exchange_name} client (testnet: {testnet})")
         return client

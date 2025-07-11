@@ -19,22 +19,23 @@ class MEXCClient:
     BASE_URL = "https://api.mexc.com"
     WS_URL = "wss://wbs.mexc.com/ws"
 
-    # MEXC interval mapping for HTTP API (standard format)
+    # MEXC interval mapping for HTTP API (uppercase format)
     HTTP_INTERVAL_MAP = {
-        "1m": "1m",
-        "3m": "3m",
-        "5m": "5m",
-        "15m": "15m",
-        "30m": "30m",
-        "1h": "1h",
-        "2h": "2h",
-        "4h": "4h",
-        "6h": "6h",
-        "8h": "8h",
-        "12h": "12h",
-        "1d": "1d",
-        "3d": "3d",
-        "1w": "1w",
+        "1m": "1M",
+        "3m": "3M",
+        "5m": "5M",
+        "15m": "15M",
+        "30m": "30M",
+        "1h": "1H",
+        "1H": "1H",
+        "2h": "2H",
+        "4h": "4H",
+        "6h": "6H",
+        "8h": "8H",
+        "12h": "12H",
+        "1d": "1D",
+        "3d": "3D",
+        "1w": "1W",
         "1M": "1M",
     }
 

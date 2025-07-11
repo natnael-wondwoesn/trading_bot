@@ -20,3 +20,4 @@ trading_service.db-shm
 trading_service.db
 trading_service.db-shm
 trading_service.db
+test_multi_exchange_startup.py

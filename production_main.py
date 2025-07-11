@@ -21,7 +21,7 @@ from services.user_service import user_service
 from services.multi_user_bot import MultiUserTradingBot
 from services.trading_orchestrator import trading_orchestrator
 from services.monitoring_service import monitoring_service
-from services.real_market_data_service import real_market_data_service
+from services.multi_exchange_data_service import multi_exchange_data_service
 from db.multi_user_db import multi_user_db
 
 # Configure logging with UTF-8 encoding for Windows compatibility
@@ -156,15 +156,17 @@ class ProductionTradingService:
         async def get_current_prices():
             """Get current market prices for all monitored pairs"""
             try:
-                prices = real_market_data_service.get_current_prices()
-                stats = real_market_data_service.get_service_stats()
+                prices = multi_exchange_data_service.get_current_prices()
+                stats = multi_exchange_data_service.get_service_stats()
                 return JSONResponse(
                     content={
                         "prices": prices,
+                        "exchange_status": stats["exchanges"],
                         "service_status": {
                             "running": stats["running"],
                             "trading_pairs": stats["trading_pairs"],
-                            "data_updates": stats["data_updates"],
+                            "mexc_updates": stats["mexc_updates"],
+                            "bybit_updates": stats["bybit_updates"],
                             "signals_generated": stats["signals_generated"],
                             "uptime_seconds": stats["uptime_seconds"],
                         },
@@ -185,6 +187,50 @@ class ProductionTradingService:
                 logger.error(f"Error forcing signals: {e}")
                 return JSONResponse(status_code=500, content={"error": str(e)})
 
+        @self.app.get("/exchanges/status")
+        async def get_exchange_status():
+            """Get status of all exchanges"""
+            try:
+                # Get exchange status from multi-exchange service
+                if multi_exchange_data_service.initialized:
+                    exchange_status = multi_exchange_data_service.get_exchange_status()
+                    service_stats = multi_exchange_data_service.get_service_stats()
+
+                    return JSONResponse(
+                        content={
+                            "exchanges": exchange_status,
+                            "service_running": service_stats["running"],
+                            "trading_pairs": service_stats["trading_pairs"],
+                            "mexc_updates": service_stats["mexc_updates"],
+                            "bybit_updates": service_stats["bybit_updates"],
+                            "timestamp": datetime.now().isoformat(),
+                        }
+                    )
+                else:
+                    # Fallback to factory if service not initialized
+                    from exchange_factory import ExchangeFactory
+
+                    available_exchanges = ExchangeFactory.get_available_exchanges()
+
+                    return JSONResponse(
+                        content={
+                            "exchanges": {
+                                name: {
+                                    "available": cap.available,
+                                    "api_configured": cap.api_configured,
+                                    "error": cap.error_message,
+                                }
+                                for name, cap in available_exchanges.items()
+                            },
+                            "service_running": False,
+                            "timestamp": datetime.now().isoformat(),
+                        }
+                    )
+
+            except Exception as e:
+                logger.error(f"Error getting exchange status: {e}")
+                return JSONResponse(status_code=500, content={"error": str(e)})
+
     async def start_all_services(self):
         """Start all services in the correct order"""
         logger.info("Starting Multi-User Trading Service...")
@@ -195,20 +241,24 @@ class ProductionTradingService:
             logger.info("Step 1: Initializing database...")
             await multi_user_db.initialize()
 
-            # 2. Initialize user service
-            logger.info("Step 2: Starting user service...")
+            # 2. Validate exchange configurations
+            logger.info("Step 2: Validating exchange configurations...")
+            await self._validate_exchange_configs()
+
+            # 3. Initialize user service
+            logger.info("Step 3: Starting user service...")
             await user_service.initialize()
 
-            # 3. Initialize trading orchestrator
-            logger.info("Step 3: Starting trading orchestrator...")
+            # 4. Initialize trading orchestrator
+            logger.info("Step 4: Starting trading orchestrator...")
             await trading_orchestrator.initialize()
 
-            # 4. Initialize monitoring service
-            logger.info("Step 4: Starting monitoring service...")
+            # 5. Initialize monitoring service
+            logger.info("Step 5: Starting monitoring service...")
             await monitoring_service.start()
 
-            # 5. Initialize and start Telegram bot
-            logger.info("Step 5: Starting Telegram bot...")
+            # 6. Initialize and start Telegram bot
+            logger.info("Step 6: Starting Telegram bot...")
             bot = MultiUserTradingBot(self.config["telegram_bot_token"])
             bot_app = await bot.start()
             self.services["bot"] = bot
@@ -219,12 +269,12 @@ class ProductionTradingService:
 
             bot_module.multi_user_bot = bot
 
-            # 6. Start real market data service
-            logger.info("Step 6: Starting real market data service...")
-            await real_market_data_service.start()
+            # 7. Start multi-exchange data service (initializes both MEXC and Bybit)
+            logger.info("Step 7: Starting multi-exchange data service...")
+            await multi_exchange_data_service.start()
 
-            # 7. Start background tasks
-            logger.info("Step 7: Starting background tasks...")
+            # 8. Start background tasks
+            logger.info("Step 8: Starting background tasks...")
             asyncio.create_task(self._periodic_maintenance())
 
             self.running = True
@@ -240,6 +290,50 @@ class ProductionTradingService:
             logger.error(f"Failed to start services: {e}")
             await self.shutdown_all_services()
             raise
+
+    async def _validate_exchange_configs(self):
+        """Validate exchange configurations at startup"""
+        from exchange_factory import ExchangeFactory
+
+        logger.info("Validating exchange configurations...")
+
+        # Get available exchanges
+        available_exchanges = ExchangeFactory.get_available_exchanges()
+
+        configured_count = 0
+        for exchange_name, capabilities in available_exchanges.items():
+            if capabilities.api_configured:
+                logger.info(f"✅ {capabilities.name}: API credentials configured")
+                configured_count += 1
+
+                # Test connection
+                try:
+                    success, message = await ExchangeFactory.test_exchange_connection(
+                        exchange_name
+                    )
+                    if success:
+                        logger.info(
+                            f"✅ {capabilities.name}: Connection test successful"
+                        )
+                    else:
+                        logger.warning(
+                            f"⚠️ {capabilities.name}: Connection test failed - {message}"
+                        )
+                except Exception as e:
+                    logger.warning(
+                        f"⚠️ {capabilities.name}: Connection test error - {e}"
+                    )
+            else:
+                logger.info(f"⚠️ {capabilities.name}: {capabilities.error_message}")
+
+        if configured_count == 0:
+            raise Exception(
+                "No exchanges are properly configured! Please check your API keys."
+            )
+
+        logger.info(
+            f"Exchange validation completed: {configured_count} exchange(s) configured"
+        )
 
     async def shutdown_all_services(self):
         """Gracefully shutdown all services"""
@@ -257,12 +351,12 @@ class ProductionTradingService:
                 except Exception as e:
                     logger.error(f"Error stopping bot: {e}")
 
-            # 2. Stop real market data service (stops new signals)
-            logger.info("Stopping real market data service...")
+            # 2. Stop multi-exchange data service (stops new signals)
+            logger.info("Stopping multi-exchange data service...")
             try:
-                await real_market_data_service.stop()
+                await multi_exchange_data_service.stop()
             except Exception as e:
-                logger.error(f"Error stopping market data service: {e}")
+                logger.error(f"Error stopping multi-exchange data service: {e}")
 
             # 3. Stop trading orchestrator (finishes pending trades)
             logger.info("Stopping trading orchestrator...")
@@ -307,8 +401,14 @@ class ProductionTradingService:
     async def _force_signal_generation(self):
         """Force signal generation for testing purposes"""
         try:
-            await real_market_data_service.force_signal_generation()
-            return {"status": "success", "message": "Signals generated for all pairs"}
+            signals_generated = (
+                await multi_exchange_data_service.force_signal_generation()
+            )
+            return {
+                "status": "success",
+                "message": f"Signals generated for all exchanges",
+                "signals_generated": signals_generated,
+            }
         except Exception as e:
             logger.error(f"Error forcing signal generation: {e}")
             return {"status": "error", "message": str(e)}

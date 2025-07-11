@@ -73,7 +73,7 @@ class BybitClient:
 
             # Prepare parameters
             params = params or {}
-            if category:
+            if category is not None:
                 params["category"] = category
 
             # Create query string for signature
@@ -194,6 +194,7 @@ class BybitClient:
 
         # Convert data types
         df["timestamp"] = pd.to_numeric(df["timestamp"], errors="coerce")
+        df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms", errors="coerce")
         df["open"] = pd.to_numeric(df["open"], errors="coerce")
         df["high"] = pd.to_numeric(df["high"], errors="coerce")
         df["low"] = pd.to_numeric(df["low"], errors="coerce")
@@ -203,13 +204,17 @@ class BybitClient:
         # Sort by timestamp (Bybit returns newest first, we want oldest first)
         df = df.sort_values("timestamp").reset_index(drop=True)
 
+        # Set timestamp as index and return only OHLCV columns like MEXC
+        df.set_index("timestamp", inplace=True)
+        df.attrs["pair"] = symbol
+
         logger.info(f"Klines response structure for {symbol}: {len(df)} rows")
         if len(df) > 0:
             logger.info(
                 f"First row structure: {len(df.columns)} columns: {df.iloc[0].tolist()}"
             )
 
-        return df
+        return df[["open", "high", "low", "close", "volume"]]
 
     async def get_recent_trades(
         self, symbol: str, limit: int = 60, category: str = "spot"
@@ -221,13 +226,19 @@ class BybitClient:
     # Account Methods
     async def get_account_info(self) -> Dict:
         """Get account information"""
-        return await self._request("GET", "/v5/account/info", signed=True)
+        return await self._request(
+            "GET", "/v5/account/info", signed=True, category=None
+        )
 
-    async def get_wallet_balance(self, account_type: str = "UNIFIED") -> Dict:
+    async def get_wallet_balance(
+        self, account_type: str = "UNIFIED", coin: str = None
+    ) -> Dict:
         """Get wallet balance"""
         params = {"accountType": account_type}
+        if coin:
+            params["coin"] = coin
         return await self._request(
-            "GET", "/v5/account/wallet-balance", params, signed=True
+            "GET", "/v5/account/wallet-balance", params, signed=True, category=None
         )
 
     async def get_balance(self, account_type: str = "UNIFIED") -> Dict:

@@ -166,8 +166,11 @@ class MultiExchangeDataService:
 
             # Test connectivity
             server_time = await self.bybit_client.get_server_time()
+            time_second = int(
+                server_time["result"]["timeSecond"]
+            )  # Convert string to int
             logger.info(
-                f"[OK] Connected to Bybit API (Server time: {datetime.fromtimestamp(server_time['result']['timeSecond'])})"
+                f"[OK] Connected to Bybit API (Server time: {datetime.fromtimestamp(time_second)})"
             )
 
             # Get instruments info to verify pairs

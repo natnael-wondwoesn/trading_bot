@@ -841,7 +841,7 @@ Type `/help` for a complete list of commands! 🤖"""
             return {"exchange": "MEXC", "api_status": "error", "error_message": str(e)}
 
     async def _get_bybit_account_data(self, user_id: int) -> Dict:
-        """Get Bybit account data"""
+        """Get Bybit account data with support for both Unified and Classic account modes"""
         try:
             # Import Bybit client
             from bybit.bybit_client import BybitClient
@@ -852,11 +852,13 @@ Type `/help` for a complete list of commands! 🤖"""
                 Config.BYBIT_API_KEY, Config.BYBIT_API_SECRET
             ) as bybit_client:
 
-                # Get wallet balance
-                wallet_response = await bybit_client.get_wallet_balance()
-
-                # Get account info
+                # Get account info to determine account mode
                 account_info = await bybit_client.get_account_info()
+                unified_status = account_info.get("result", {}).get(
+                    "unifiedMarginStatus", 0
+                )
+
+                logger.info(f"Bybit unified margin status: {unified_status}")
 
                 # Get open orders (this returns a list directly)
                 open_orders_list = await bybit_client.get_open_orders()
@@ -865,39 +867,134 @@ Type `/help` for a complete list of commands! 🤖"""
                 total_balance = 0
                 balances = []
 
-                # Parse wallet response - Bybit returns nested structure
-                if isinstance(wallet_response, dict):
-                    wallet_list = wallet_response.get("result", {}).get("list", [])
-                    if wallet_list and len(wallet_list) > 0:
-                        # Get the first wallet (usually UNIFIED account)
-                        first_wallet = wallet_list[0]
-                        if isinstance(first_wallet, dict):
-                            coins = first_wallet.get("coin", [])
-                            for coin_data in coins:
-                                if isinstance(coin_data, dict):
-                                    wallet_balance = float(
-                                        coin_data.get("walletBalance", "0")
+                # Method 1: Try UNIFIED account wallet (works if account is in Unified mode)
+                if unified_status == 1:  # Account is in Unified Trading mode
+                    logger.info(
+                        "Account is in Unified Trading mode, checking unified wallet..."
+                    )
+                    try:
+                        wallet_response = await bybit_client.get_wallet_balance(
+                            account_type="UNIFIED"
+                        )
+
+                        if isinstance(wallet_response, dict):
+                            wallet_list = wallet_response.get("result", {}).get(
+                                "list", []
+                            )
+                            if wallet_list and len(wallet_list) > 0:
+                                first_wallet = wallet_list[0]
+                                if isinstance(first_wallet, dict):
+                                    coins = first_wallet.get("coin", [])
+                                    logger.info(
+                                        f"Found {len(coins)} coins in unified wallet"
                                     )
-                                    locked_balance = float(coin_data.get("locked", "0"))
-                                    available_balance = wallet_balance - locked_balance
-                                    coin_symbol = coin_data.get("coin", "")
 
-                                    if wallet_balance > 0:
-                                        balances.append(
-                                            {
-                                                "asset": coin_symbol,
-                                                "free": available_balance,
-                                                "locked": locked_balance,
-                                                "total": wallet_balance,
-                                            }
-                                        )
+                                    for coin_data in coins:
+                                        if isinstance(coin_data, dict):
+                                            wallet_balance = float(
+                                                coin_data.get("walletBalance", "0")
+                                            )
+                                            locked_balance = float(
+                                                coin_data.get("locked", "0")
+                                            )
+                                            available_balance = (
+                                                wallet_balance - locked_balance
+                                            )
+                                            coin_symbol = coin_data.get("coin", "")
 
-                                        # Count USDT value
-                                        if coin_symbol in ["USDT", "USDC"]:
-                                            total_balance += wallet_balance
+                                            if wallet_balance > 0:
+                                                balances.append(
+                                                    {
+                                                        "asset": coin_symbol,
+                                                        "free": available_balance,
+                                                        "locked": locked_balance,
+                                                        "total": wallet_balance,
+                                                    }
+                                                )
 
-                # Alternative: Try using get_balance method if wallet_balance fails
+                                                # Count USDT value
+                                                if coin_symbol in [
+                                                    "USDT",
+                                                    "USDC",
+                                                    "BUSD",
+                                                ]:
+                                                    total_balance += wallet_balance
+
+                    except Exception as unified_error:
+                        logger.warning(f"Unified wallet access failed: {unified_error}")
+
+                        # Method 2: Try Classic Account mode - check individual coins
+                if not balances:  # If no balances found in unified account
+                    logger.info(
+                        "Trying Classic Account mode - checking individual coin balances..."
+                    )
+
+                    try:
+                        # Check common coins individually
+                        common_coins = [
+                            "USDT",
+                            "USDC",
+                            "BUSD",
+                            "BTC",
+                            "ETH",
+                            "BNB",
+                            "SOL",
+                            "ADA",
+                            "DOGE",
+                        ]
+
+                        for coin in common_coins:
+                            try:
+                                # Check individual coin balance
+                                coin_response = await bybit_client.get_wallet_balance(
+                                    account_type="UNIFIED", coin=coin
+                                )
+
+                                if coin_response.get("result", {}).get("list"):
+                                    wallets = coin_response["result"]["list"]
+                                    for wallet in wallets:
+                                        coins_data = wallet.get("coin", [])
+                                        for coin_data in coins_data:
+                                            if coin_data.get("coin") == coin:
+                                                wallet_balance = float(
+                                                    coin_data.get("walletBalance", "0")
+                                                )
+                                                if wallet_balance > 0:
+                                                    locked_balance = float(
+                                                        coin_data.get("locked", "0")
+                                                    )
+                                                    available_balance = (
+                                                        wallet_balance - locked_balance
+                                                    )
+
+                                                    balances.append(
+                                                        {
+                                                            "asset": coin,
+                                                            "free": available_balance,
+                                                            "locked": locked_balance,
+                                                            "total": wallet_balance,
+                                                        }
+                                                    )
+
+                                                    if coin in ["USDT", "USDC", "BUSD"]:
+                                                        total_balance += wallet_balance
+
+                                                    logger.info(
+                                                        f"Found {coin}: {wallet_balance}"
+                                                    )
+
+                            except Exception as coin_error:
+                                # Skip coins that don't exist or have errors
+                                continue
+
+                    except Exception as classic_error:
+                        logger.warning(
+                            f"Classic account balance check failed: {classic_error}"
+                        )
+
+                # Method 3: Try the get_balance compatibility method as final fallback
                 if not balances:
+                    logger.info("Trying compatibility get_balance method...")
                     try:
                         balance_response = await bybit_client.get_balance()
                         if isinstance(balance_response, dict):
@@ -917,12 +1014,22 @@ Type `/help` for a complete list of commands! 🤖"""
                                             }
                                         )
 
-                                        if asset in ["USDT", "USDC"]:
+                                        if asset in ["USDT", "USDC", "BUSD"]:
                                             total_balance += total_asset_balance
-                    except Exception as balance_error:
+
+                    except Exception as compat_error:
                         logger.warning(
-                            f"Failed to get balance via alternative method: {balance_error}"
+                            f"Compatibility balance method failed: {compat_error}"
                         )
+
+                # Log results
+                logger.info(
+                    f"Bybit balance check complete: {len(balances)} assets, ${total_balance} USDT total"
+                )
+                for balance in balances:
+                    logger.info(
+                        f"  {balance['asset']}: {balance['total']} (free: {balance['free']}, locked: {balance['locked']})"
+                    )
 
                 return {
                     "exchange": "Bybit",
@@ -935,6 +1042,8 @@ Type `/help` for a complete list of commands! 🤖"""
                         else 0
                     ),
                     "api_status": "connected",
+                    "account_mode": "unified" if unified_status == 1 else "classic",
+                    "unified_status": unified_status,
                 }
 
         except Exception as e:
@@ -970,13 +1079,24 @@ Use ⚙️ Settings to configure your API keys."""
             total_balance = account_data.get("total_balance_usdt", 0)
             open_orders = account_data.get("open_orders", 0)
 
+            # Special handling for Bybit Classic account mode
+            account_mode_info = ""
+            if exchange == "Bybit":
+                account_mode = account_data.get("account_mode", "unknown")
+                unified_status = account_data.get("unified_status", 0)
+
+                if account_mode == "classic":
+                    account_mode_info = f"""
+🔔 **Account Mode:** Classic (Status: {unified_status})
+⚠️ **Note:** If you have balance but it shows $0, it might be in Spot Trading wallet (separate from Unified Account). Check your Bybit account settings or contact support."""
+
             dashboard_text = f"""📊 **{exchange.upper()} DASHBOARD**
 
 👤 **Account Overview**
 🏦 Exchange: {exchange}
 💰 Total Balance: ${total_balance:,.2f} USDT
 📈 Open Orders: {open_orders}
-⚡ Status: {'🟢 Connected' if account_data.get('api_status') == 'connected' else '🔴 Disconnected'}
+⚡ Status: {'🟢 Connected' if account_data.get('api_status') == 'connected' else '🔴 Disconnected'}{account_mode_info}
 
 💼 **Portfolio Breakdown**"""
 
@@ -998,7 +1118,20 @@ Use ⚙️ Settings to configure your API keys."""
                 if len(balances) > 5:
                     dashboard_text += f"\n  └ ... and {len(balances) - 5} more assets"
             else:
-                dashboard_text += "\n• No assets found"
+                if (
+                    exchange == "Bybit"
+                    and account_data.get("account_mode") == "classic"
+                ):
+                    dashboard_text += """
+• No assets found in Unified Account
+
+🔍 **Troubleshooting:**
+• Your balance might be in Classic Spot Trading
+• Check API permissions (needs 'Read' access)
+• Verify you're using the correct API keys
+• Consider switching to Unified Trading mode in Bybit"""
+                else:
+                    dashboard_text += "\n• No assets found"
 
             # Add trading performance from database
             if dashboard_data:

@@ -505,7 +505,8 @@ class MultiUserDatabase:
         async with self.get_connection() as db:
             cursor = await db.execute(
                 """
-                SELECT * FROM user_settings WHERE user_id = ?
+                SELECT user_id, strategy, exchange, risk_management, notifications, emergency, last_updated 
+                FROM user_settings WHERE user_id = ?
             """,
                 (user_id,),
             )
@@ -989,7 +990,7 @@ class MultiUserDatabase:
         }
 
         async with self.get_connection() as db:
-            # Get all user settings
+            # Get all user settings with correct column order
             cursor = await db.execute(
                 "SELECT user_id, risk_management, notifications, emergency FROM user_settings"
             )

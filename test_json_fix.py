@@ -67,9 +67,15 @@ async def test_json_parsing_fixes():
         # Test user settings creation and retrieval
         logger.info("👤 Testing user settings...")
 
-        # Create a test user
+        # Create a test user with unique telegram_id
+        import random
+
+        telegram_id = random.randint(100000, 999999)
         test_user = await multi_user_db.create_user(
-            telegram_id=12345, username="test_user", first_name="Test", last_name="User"
+            telegram_id=telegram_id,
+            username="test_user",
+            first_name="Test",
+            last_name="User",
         )
         logger.info(f"  Created test user: {test_user.user_id}")
 

@@ -1413,16 +1413,31 @@ Your trading settings have been updated. Use `/dashboard` to view your {exchange
                 ]
                 reply_markup = InlineKeyboardMarkup(keyboard)
 
+                # Format values safely to avoid Markdown issues
+                max_risk = risk_settings.get("max_risk_per_trade", 0.02) * 100
+                trading_enabled_icon = (
+                    "✅" if risk_settings.get("trading_enabled", True) else "❌"
+                )
+
+                # Determine risk level safely
+                risk_value = risk_settings.get("max_risk_per_trade", 0.02)
+                if risk_value <= 0.02:
+                    risk_level = "🟢 Conservative"
+                elif risk_value <= 0.05:
+                    risk_level = "🟡 Moderate"
+                else:
+                    risk_level = "🔴 Aggressive"
+
                 risk_text = f"""💰 **RISK MANAGEMENT**
 
 **Current Settings:**
-• Max Risk per Trade: {risk_settings.get('max_risk_per_trade', 0.02)*100:.1f}%
+• Max Risk per Trade: {max_risk:.1f}%
 • Stop Loss (ATR): {risk_settings.get('stop_loss_atr', 2.0)}x
 • Take Profit (ATR): {risk_settings.get('take_profit_atr', 3.0)}x
 • Max Open Positions: {risk_settings.get('max_open_positions', 5)}
-• Trading Enabled: {'✅' if risk_settings.get('trading_enabled', True) else '❌'}
+• Trading Enabled: {trading_enabled_icon}
 
-**Risk Level:** {'🟢 Conservative' if risk_settings.get('max_risk_per_trade', 0.02) <= 0.02 else '🟡 Moderate' if risk_settings.get('max_risk_per_trade', 0.02) <= 0.05 else '🔴 Aggressive'}
+**Risk Level:** {risk_level}
 
 Configure your risk parameters to match your trading style."""
 
@@ -1450,12 +1465,23 @@ Configure your risk parameters to match your trading style."""
                 ]
                 reply_markup = InlineKeyboardMarkup(keyboard)
 
+                # Format notification status safely
+                signal_alerts = (
+                    "✅" if notifications.get("signal_alerts", True) else "❌"
+                )
+                trade_execution = (
+                    "✅" if notifications.get("trade_execution", True) else "❌"
+                )
+                risk_warnings = (
+                    "✅" if notifications.get("risk_warnings", True) else "❌"
+                )
+
                 notif_text = f"""📱 **NOTIFICATION SETTINGS**
 
 **Current Settings:**
-• Signal Alerts: {'✅' if notifications.get('signal_alerts', True) else '❌'}
-• Trade Execution: {'✅' if notifications.get('trade_execution', True) else '❌'}
-• Risk Warnings: {'✅' if notifications.get('risk_warnings', True) else '❌'}
+• Signal Alerts: {signal_alerts}
+• Trade Execution: {trade_execution}
+• Risk Warnings: {risk_warnings}
 
 Stay informed about your trading activity with customizable notifications."""
 
@@ -1480,6 +1506,32 @@ Stay informed about your trading activity with customizable notifications."""
                 ]
                 reply_markup = InlineKeyboardMarkup(keyboard)
 
+                # Format all values safely to avoid Markdown issues
+                max_risk_percent = risk_mgmt.get("max_risk_per_trade", 0.02) * 100
+                trading_status = (
+                    "✅ Enabled"
+                    if risk_mgmt.get("trading_enabled", True)
+                    else "❌ Disabled"
+                )
+                signal_alerts_status = (
+                    "✅" if notifications.get("signal_alerts", True) else "❌"
+                )
+                trade_updates_status = (
+                    "✅" if notifications.get("trade_execution", True) else "❌"
+                )
+                risk_warnings_status = (
+                    "✅" if notifications.get("risk_warnings", True) else "❌"
+                )
+                emergency_mode_status = (
+                    "✅ Active"
+                    if emergency.get("emergency_mode", False)
+                    else "❌ Inactive"
+                )
+                auto_close_status = (
+                    "✅" if emergency.get("auto_close_on_loss", False) else "❌"
+                )
+                max_daily_loss_percent = emergency.get("max_daily_loss", 0.05) * 100
+
                 view_text = f"""📊 **ALL SETTINGS OVERVIEW**
 
 **Exchange & Strategy:**
@@ -1487,21 +1539,21 @@ Stay informed about your trading activity with customizable notifications."""
 🔧 Strategy: {settings.get('strategy', 'RSI_EMA')}
 
 **Risk Management:**
-💰 Max Risk: {risk_mgmt.get('max_risk_per_trade', 0.02)*100:.1f}%
+💰 Max Risk: {max_risk_percent:.1f}%
 🛑 Stop Loss: {risk_mgmt.get('stop_loss_atr', 2.0)}x ATR
 🎯 Take Profit: {risk_mgmt.get('take_profit_atr', 3.0)}x ATR
 📊 Max Positions: {risk_mgmt.get('max_open_positions', 5)}
-⚡ Trading: {'✅ Enabled' if risk_mgmt.get('trading_enabled', True) else '❌ Disabled'}
+⚡ Trading: {trading_status}
 
 **Notifications:**
-🔔 Signal Alerts: {'✅' if notifications.get('signal_alerts', True) else '❌'}
-📈 Trade Updates: {'✅' if notifications.get('trade_execution', True) else '❌'}
-⚠️ Risk Warnings: {'✅' if notifications.get('risk_warnings', True) else '❌'}
+🔔 Signal Alerts: {signal_alerts_status}
+📈 Trade Updates: {trade_updates_status}
+⚠️ Risk Warnings: {risk_warnings_status}
 
 **Emergency:**
-🚨 Emergency Mode: {'✅ Active' if emergency.get('emergency_mode', False) else '❌ Inactive'}
-🔒 Auto Close: {'✅' if emergency.get('auto_close_on_loss', False) else '❌'}
-📉 Max Daily Loss: {emergency.get('max_daily_loss', 0.05)*100:.1f}%"""
+🚨 Emergency Mode: {emergency_mode_status}
+🔒 Auto Close: {auto_close_status}
+📉 Max Daily Loss: {max_daily_loss_percent:.1f}%"""
 
                 await query.edit_message_text(
                     view_text, reply_markup=reply_markup, parse_mode="Markdown"
@@ -1817,15 +1869,19 @@ Stay informed about your trading activity with customizable notifications."""
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
 
+            # Format status safely to avoid Markdown issues
+            trading_enabled = user_context.settings.get("trading_enabled", True)
+            status_text = "🟢 Active" if trading_enabled else "🔴 Paused"
+
             settings_text = f"""⚙️ **TRADING SETTINGS**
-        
+
 👤 **User:** {user_context.user.first_name or user_context.user.username}
 🎯 **Plan:** {user_context.user.subscription_tier.title()}
 
 **Current Configuration:**
 🏦 **Exchange:** {current_exchange}
 🔧 **Strategy:** {current_strategy}
-⚡ **Status:** {'🟢 Active' if user_context.settings.get('trading_enabled', True) else '🔴 Paused'}
+⚡ **Status:** {status_text}
 
 **Configure your trading preferences:**"""
 

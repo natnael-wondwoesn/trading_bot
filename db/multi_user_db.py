@@ -113,6 +113,14 @@ class MultiUserDatabase:
         self._initialized = True
         logger.info(f"Database initialized with {self.max_connections} connections")
 
+        # Repair corrupted JSON data on startup (after initialization)
+        try:
+            repair_results = await self.repair_corrupted_json_data()
+            if sum(repair_results.values()) - repair_results["total_users_checked"] > 0:
+                logger.info("Database JSON repair completed successfully")
+        except Exception as e:
+            logger.warning(f"JSON repair failed, but continuing: {e}")
+
     async def shutdown(self):
         """Properly shutdown database and close all connections"""
         if not self._initialized:
@@ -409,8 +417,91 @@ class MultiUserDatabase:
             return (await cursor.fetchone())[0]
 
     # Settings Management
+    def _safe_json_loads(self, json_str: str, default_value: dict = None) -> dict:
+        """Safely parse JSON string with fallback to default value"""
+        if default_value is None:
+            default_value = {}
+
+        try:
+            if not json_str or json_str.strip() == "":
+                return default_value
+
+            # Clean the JSON string - remove extra whitespace and potential trailing chars
+            cleaned_json = json_str.strip()
+
+            # Try to find the end of valid JSON by looking for balanced braces
+            if cleaned_json.startswith("{"):
+                brace_count = 0
+                valid_end = 0
+                for i, char in enumerate(cleaned_json):
+                    if char == "{":
+                        brace_count += 1
+                    elif char == "}":
+                        brace_count -= 1
+                        if brace_count == 0:
+                            valid_end = i + 1
+                            break
+
+                if valid_end > 0:
+                    cleaned_json = cleaned_json[:valid_end]
+
+            # Parse the cleaned JSON
+            result = json.loads(cleaned_json)
+
+            # Ensure result is a dictionary
+            if not isinstance(result, dict):
+                logger.warning(
+                    f"JSON parsing resulted in non-dict type: {type(result)}, using default"
+                )
+                return default_value
+
+            return result
+
+        except json.JSONDecodeError as e:
+            logger.warning(
+                f"JSON decode error: {e}. Using default value. Original string: {repr(json_str[:100])}"
+            )
+            return default_value
+        except Exception as e:
+            logger.error(
+                f"Unexpected error parsing JSON: {e}. Using default value. Original string: {repr(json_str[:100])}"
+            )
+            return default_value
+
+    def _safe_json_dumps(self, data: dict, field_name: str = "unknown") -> str:
+        """Safely serialize dictionary to JSON string"""
+        try:
+            if not isinstance(data, dict):
+                logger.warning(
+                    f"Attempting to serialize non-dict data for {field_name}: {type(data)}"
+                )
+                return "{}"
+
+            # Remove any non-serializable values
+            clean_data = {}
+            for key, value in data.items():
+                try:
+                    # Test if the value is JSON serializable
+                    json.dumps(value)
+                    clean_data[key] = value
+                except (TypeError, ValueError) as e:
+                    logger.warning(
+                        f"Skipping non-serializable value for {field_name}.{key}: {e}"
+                    )
+
+            result = json.dumps(clean_data, ensure_ascii=True, separators=(",", ":"))
+
+            # Validate that we can parse it back
+            json.loads(result)
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Error serializing JSON for {field_name}: {e}")
+            return "{}"
+
     async def get_user_settings(self, user_id: int) -> Optional[UserSettings]:
-        """Get user settings"""
+        """Get user settings with safe JSON parsing"""
         async with self.get_connection() as db:
             cursor = await db.execute(
                 """
@@ -421,55 +512,143 @@ class MultiUserDatabase:
 
             row = await cursor.fetchone()
             if row:
-                return UserSettings(
-                    user_id=row[0],
-                    strategy=row[1],
-                    exchange=row[2],
-                    risk_management=json.loads(row[3]),
-                    notifications=json.loads(row[4]),
-                    emergency=json.loads(row[5]),
-                    last_updated=datetime.fromisoformat(row[6]),
-                )
+                # Default values for settings in case of JSON parsing errors
+                default_risk_management = {
+                    "max_risk_per_trade": 0.02,
+                    "stop_loss_atr": 2.0,
+                    "take_profit_atr": 3.0,
+                    "max_open_positions": 5,
+                    "emergency_stop": False,
+                    "trading_enabled": True,
+                }
+
+                default_notifications = {
+                    "signal_alerts": True,
+                    "trade_execution": True,
+                    "risk_warnings": True,
+                }
+
+                default_emergency = {
+                    "emergency_mode": False,
+                    "auto_close_on_loss": False,
+                    "max_daily_loss": 0.05,
+                }
+
+                try:
+                    return UserSettings(
+                        user_id=row[0],
+                        strategy=row[1] or "RSI_EMA",
+                        exchange=row[2] or "MEXC",
+                        risk_management=self._safe_json_loads(
+                            row[3], default_risk_management
+                        ),
+                        notifications=self._safe_json_loads(
+                            row[4], default_notifications
+                        ),
+                        emergency=self._safe_json_loads(row[5], default_emergency),
+                        last_updated=(
+                            datetime.fromisoformat(row[6]) if row[6] else datetime.now()
+                        ),
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"Error creating UserSettings object for user {user_id}: {e}"
+                    )
+                    # Return settings with all defaults if object creation fails
+                    return UserSettings(
+                        user_id=user_id,
+                        strategy="RSI_EMA",
+                        exchange="MEXC",
+                        risk_management=default_risk_management,
+                        notifications=default_notifications,
+                        emergency=default_emergency,
+                        last_updated=datetime.now(),
+                    )
             return None
 
     async def update_user_settings(self, user_id: int, **kwargs):
-        """Update user settings"""
+        """Update user settings with safe JSON handling"""
         async with self.get_connection() as db:
-            settings = await self.get_user_settings(user_id)
-            if not settings:
-                await self._create_default_settings(db, user_id)
+            try:
                 settings = await self.get_user_settings(user_id)
+                if not settings:
+                    await self._create_default_settings(db, user_id)
+                    settings = await self.get_user_settings(user_id)
 
-            updates = []
-            params = []
+                updates = []
+                params = []
 
-            if "strategy" in kwargs:
-                updates.append("strategy = ?")
-                params.append(kwargs["strategy"])
+                if "strategy" in kwargs:
+                    strategy = kwargs["strategy"]
+                    # Validate strategy is a string
+                    if isinstance(strategy, str) and strategy.strip():
+                        updates.append("strategy = ?")
+                        params.append(strategy.strip())
 
-            if "risk_management" in kwargs:
-                updates.append("risk_management = ?")
-                params.append(json.dumps(kwargs["risk_management"]))
+                if "exchange" in kwargs:
+                    exchange = kwargs["exchange"]
+                    # Validate exchange is a string
+                    if isinstance(exchange, str) and exchange.strip():
+                        updates.append("exchange = ?")
+                        params.append(exchange.strip())
 
-            if "notifications" in kwargs:
-                updates.append("notifications = ?")
-                params.append(json.dumps(kwargs["notifications"]))
+                if "risk_management" in kwargs:
+                    risk_data = kwargs["risk_management"]
+                    if isinstance(risk_data, dict):
+                        updates.append("risk_management = ?")
+                        params.append(
+                            self._safe_json_dumps(risk_data, "risk_management")
+                        )
+                    else:
+                        logger.warning(
+                            f"Invalid risk_management data type for user {user_id}: {type(risk_data)}"
+                        )
 
-            if "emergency" in kwargs:
-                updates.append("emergency = ?")
-                params.append(json.dumps(kwargs["emergency"]))
+                if "notifications" in kwargs:
+                    notif_data = kwargs["notifications"]
+                    if isinstance(notif_data, dict):
+                        updates.append("notifications = ?")
+                        params.append(
+                            self._safe_json_dumps(notif_data, "notifications")
+                        )
+                    else:
+                        logger.warning(
+                            f"Invalid notifications data type for user {user_id}: {type(notif_data)}"
+                        )
 
-            if updates:
-                updates.append("last_updated = CURRENT_TIMESTAMP")
-                params.append(user_id)
+                if "emergency" in kwargs:
+                    emergency_data = kwargs["emergency"]
+                    if isinstance(emergency_data, dict):
+                        updates.append("emergency = ?")
+                        params.append(
+                            self._safe_json_dumps(emergency_data, "emergency")
+                        )
+                    else:
+                        logger.warning(
+                            f"Invalid emergency data type for user {user_id}: {type(emergency_data)}"
+                        )
 
-                await db.execute(
-                    f"""
-                    UPDATE user_settings SET {', '.join(updates)} WHERE user_id = ?
-                """,
-                    params,
-                )
-                await db.commit()
+                if updates:
+                    updates.append("last_updated = CURRENT_TIMESTAMP")
+                    params.append(user_id)
+
+                    await db.execute(
+                        f"""
+                        UPDATE user_settings SET {', '.join(updates)} WHERE user_id = ?
+                    """,
+                        params,
+                    )
+                    await db.commit()
+                    logger.debug(f"Successfully updated settings for user {user_id}")
+
+            except Exception as e:
+                logger.error(f"Error updating user settings for user {user_id}: {e}")
+                # Try to rollback the transaction
+                try:
+                    await db.rollback()
+                except:
+                    pass
+                raise
 
     # Trade Management
     async def create_trade(
@@ -760,7 +939,7 @@ class MultiUserDatabase:
         )
 
     async def _create_default_settings(self, db, user_id: int):
-        """Create default settings for new user"""
+        """Create default settings for new user with safe JSON"""
         default_risk = {
             "max_risk_per_trade": 0.02,
             "stop_loss_atr": 2.0,
@@ -792,11 +971,118 @@ class MultiUserDatabase:
             (
                 user_id,
                 "MEXC",  # Default exchange
-                json.dumps(default_risk),
-                json.dumps(default_notifications),
-                json.dumps(default_emergency),
+                self._safe_json_dumps(default_risk, "default_risk"),
+                self._safe_json_dumps(default_notifications, "default_notifications"),
+                self._safe_json_dumps(default_emergency, "default_emergency"),
             ),
         )
+
+    async def repair_corrupted_json_data(self) -> Dict[str, int]:
+        """Repair any corrupted JSON data in user_settings table"""
+        logger.info("Starting JSON data repair process...")
+
+        repaired_counts = {
+            "risk_management": 0,
+            "notifications": 0,
+            "emergency": 0,
+            "total_users_checked": 0,
+        }
+
+        async with self.get_connection() as db:
+            # Get all user settings
+            cursor = await db.execute(
+                "SELECT user_id, risk_management, notifications, emergency FROM user_settings"
+            )
+            all_settings = await cursor.fetchall()
+
+            for row in all_settings:
+                user_id, risk_mgmt_json, notifications_json, emergency_json = row
+                repaired_counts["total_users_checked"] += 1
+                needs_update = False
+
+                # Test and repair risk_management
+                risk_data = self._safe_json_loads(risk_mgmt_json)
+                if not risk_data or risk_mgmt_json != self._safe_json_dumps(
+                    risk_data, "risk_management"
+                ):
+                    default_risk = {
+                        "max_risk_per_trade": 0.02,
+                        "stop_loss_atr": 2.0,
+                        "take_profit_atr": 3.0,
+                        "max_open_positions": 5,
+                        "emergency_stop": False,
+                        "trading_enabled": True,
+                    }
+                    await db.execute(
+                        "UPDATE user_settings SET risk_management = ? WHERE user_id = ?",
+                        (
+                            self._safe_json_dumps(default_risk, "risk_management"),
+                            user_id,
+                        ),
+                    )
+                    repaired_counts["risk_management"] += 1
+                    needs_update = True
+
+                # Test and repair notifications
+                notif_data = self._safe_json_loads(notifications_json)
+                if not notif_data or notifications_json != self._safe_json_dumps(
+                    notif_data, "notifications"
+                ):
+                    default_notifications = {
+                        "signal_alerts": True,
+                        "trade_execution": True,
+                        "risk_warnings": True,
+                    }
+                    await db.execute(
+                        "UPDATE user_settings SET notifications = ? WHERE user_id = ?",
+                        (
+                            self._safe_json_dumps(
+                                default_notifications, "notifications"
+                            ),
+                            user_id,
+                        ),
+                    )
+                    repaired_counts["notifications"] += 1
+                    needs_update = True
+
+                # Test and repair emergency
+                emergency_data = self._safe_json_loads(emergency_json)
+                if not emergency_data or emergency_json != self._safe_json_dumps(
+                    emergency_data, "emergency"
+                ):
+                    default_emergency = {
+                        "emergency_mode": False,
+                        "auto_close_on_loss": False,
+                        "max_daily_loss": 0.05,
+                    }
+                    await db.execute(
+                        "UPDATE user_settings SET emergency = ? WHERE user_id = ?",
+                        (
+                            self._safe_json_dumps(default_emergency, "emergency"),
+                            user_id,
+                        ),
+                    )
+                    repaired_counts["emergency"] += 1
+                    needs_update = True
+
+                if needs_update:
+                    await db.execute(
+                        "UPDATE user_settings SET last_updated = CURRENT_TIMESTAMP WHERE user_id = ?",
+                        (user_id,),
+                    )
+
+            await db.commit()
+
+        total_repairs = (
+            repaired_counts["risk_management"]
+            + repaired_counts["notifications"]
+            + repaired_counts["emergency"]
+        )
+        logger.info(
+            f"JSON repair completed: {total_repairs} fields repaired across {repaired_counts['total_users_checked']} users"
+        )
+
+        return repaired_counts
 
     async def _update_daily_performance(self, db, user_id: int):
         """Update daily performance metrics"""

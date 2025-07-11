@@ -19,8 +19,27 @@ class MEXCClient:
     BASE_URL = "https://api.mexc.com"
     WS_URL = "wss://wbs.mexc.com/ws"
 
-    # MEXC interval mapping
-    INTERVAL_MAP = {
+    # MEXC interval mapping for HTTP API (standard format)
+    HTTP_INTERVAL_MAP = {
+        "1m": "1m",
+        "3m": "3m",
+        "5m": "5m",
+        "15m": "15m",
+        "30m": "30m",
+        "1h": "1h",
+        "2h": "2h",
+        "4h": "4h",
+        "6h": "6h",
+        "8h": "8h",
+        "12h": "12h",
+        "1d": "1d",
+        "3d": "3d",
+        "1w": "1w",
+        "1M": "1M",
+    }
+
+    # MEXC interval mapping for WebSocket API (Min/Hour format)
+    WS_INTERVAL_MAP = {
         "1m": "Min1",
         "3m": "Min3",
         "5m": "Min5",
@@ -111,7 +130,7 @@ class MEXCClient:
     ) -> pd.DataFrame:
         """Get candlestick data"""
         # Convert interval to MEXC format
-        mexc_interval = self.INTERVAL_MAP.get(interval, interval)
+        mexc_interval = self.HTTP_INTERVAL_MAP.get(interval, interval)
 
         params = {"symbol": symbol, "interval": mexc_interval, "limit": limit}
 
@@ -263,7 +282,7 @@ class MEXCClient:
             await self.start_websocket()
 
         # Convert interval to MEXC format
-        mexc_interval = self.INTERVAL_MAP.get(interval, interval)
+        mexc_interval = self.WS_INTERVAL_MAP.get(interval, interval)
 
         subscribe_msg = {
             "method": "SUBSCRIPTION",

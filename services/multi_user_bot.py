@@ -77,6 +77,13 @@ class MultiUserTradingBot:
             "messages_sent_today": 0,
             "commands_processed_today": 0,
             "errors_today": 0,
+            "json_parse_errors_today": 0,
+            "errors_network_today": 0,
+            "errors_timeout_today": 0,
+            "errors_bad_request_today": 0,
+            "errors_service_init_today": 0,
+            "errors_json_parse_today": 0,
+            "errors_unknown_today": 0,
             "last_reset": datetime.now().date(),
         }
 
@@ -91,6 +98,9 @@ class MultiUserTradingBot:
     async def initialize(self):
         """Initialize the multi-user bot system"""
         logger.info("Initializing multi-user trading bot...")
+
+        # Set running flag
+        self.running = True
 
         # Initialize services
         await user_service.initialize()
@@ -164,10 +174,33 @@ class MultiUserTradingBot:
                 session = await user_service.create_user_session(user)
                 settings = await user_service.get_user_settings(user.user_id)
 
+                # Safely convert settings to dict to avoid JSON parsing issues
+                settings_dict = {}
+                if settings:
+                    try:
+                        settings_dict = {
+                            "strategy": getattr(settings, "strategy", "RSI_EMA"),
+                            "exchange": getattr(settings, "exchange", "MEXC"),
+                            "risk_management": getattr(settings, "risk_management", {}),
+                            "notifications": getattr(settings, "notifications", {}),
+                            "emergency": getattr(settings, "emergency", {}),
+                        }
+                    except Exception as e:
+                        logger.warning(
+                            f"Error converting settings to dict for user {user.user_id}: {e}"
+                        )
+                        settings_dict = {
+                            "strategy": "RSI_EMA",
+                            "exchange": "MEXC",
+                            "risk_management": {},
+                            "notifications": {},
+                            "emergency": {},
+                        }
+
                 context = UserContext(
                     user=user,
                     session=session,
-                    settings=settings.__dict__ if settings else {},
+                    settings=settings_dict,
                     active_trades=[],
                     last_interaction=datetime.now(),
                     notification_queue=asyncio.Queue(maxsize=100),
@@ -1490,7 +1523,7 @@ Ready to upgrade your trading experience?"""
 
 **Current Settings:**
 • Strategy: {current_strategy}
-• Exchange: {current_exchange}
+• Exchange: {current_exchange} 
 • Trading: {'Enabled' if user_context.settings.get('trading_enabled', True) else 'Disabled'}
 • Risk Level: {user_context.settings.get('risk_level', 'Medium')}
 
@@ -1797,7 +1830,7 @@ Time: {datetime.now().strftime('%H:%M:%S')}"""
 
     async def _increment_stat(self, stat_name: str):
         """Thread-safe stat increment"""
-        self.stats[stat_name] += 1
+        self.stats[stat_name] = self.stats.get(stat_name, 0) + 1
 
     async def _reset_daily_stats_if_needed(self):
         """Reset daily stats if new day"""
@@ -1808,6 +1841,13 @@ Time: {datetime.now().strftime('%H:%M:%S')}"""
                     "messages_sent_today": 0,
                     "commands_processed_today": 0,
                     "errors_today": 0,
+                    "json_parse_errors_today": 0,
+                    "errors_network_today": 0,
+                    "errors_timeout_today": 0,
+                    "errors_bad_request_today": 0,
+                    "errors_service_init_today": 0,
+                    "errors_json_parse_today": 0,
+                    "errors_unknown_today": 0,
                     "last_reset": today,
                 }
             )
@@ -1837,41 +1877,108 @@ Time: {datetime.now().strftime('%H:%M:%S')}"""
                 # Track JSON parsing errors
                 await self._increment_stat("json_parse_errors_today")
 
-                # Try to recover from JSON parsing errors
+                # Enhanced JSON error recovery
                 try:
-                    logger.info("Attempting JSON error recovery...")
+                    logger.info("Attempting enhanced JSON error recovery...")
 
                     # Clear any pending updates to prevent repeated errors
                     if hasattr(self, "application") and self.application:
                         try:
-                            # Create a temporary bot instance to clear updates
+                            # Stop polling temporarily to clear buffer
+                            if (
+                                hasattr(self.application.updater, "_running")
+                                and self.application.updater._running
+                            ):
+                                logger.info(
+                                    "Temporarily stopping polling to clear buffer..."
+                                )
+                                await self.application.updater.stop()
+                                await asyncio.sleep(2)  # Wait for cleanup
+
+                            # Create a temporary bot instance to clear updates with better error handling
                             temp_bot = Bot(token=self.bot_token)
                             try:
-                                # Get latest update offset to skip corrupted data
-                                await temp_bot.get_updates(
-                                    offset=-1, limit=1, timeout=1
+                                # Get and discard pending updates with higher limit to clear buffer
+                                logger.info("Clearing corrupted update buffer...")
+                                updates = await temp_bot.get_updates(
+                                    offset=-1,
+                                    limit=100,
+                                    timeout=5,
+                                    allowed_updates=["message", "callback_query"],
                                 )
-                                logger.info("Cleared corrupted update data")
+
+                                if updates:
+                                    # Get the last update ID and use it as offset to skip all previous
+                                    last_update_id = max(
+                                        update.update_id for update in updates
+                                    )
+                                    await temp_bot.get_updates(
+                                        offset=last_update_id + 1, limit=1, timeout=1
+                                    )
+                                    logger.info(
+                                        f"Cleared {len(updates)} corrupted updates, last ID: {last_update_id}"
+                                    )
+                                else:
+                                    logger.info("No pending updates found to clear")
+
+                            except Exception as temp_error:
+                                logger.warning(
+                                    f"Temp bot clear attempt failed: {temp_error}"
+                                )
                             finally:
-                                if hasattr(temp_bot, "_request") and hasattr(
+                                # Ensure temp bot session is closed
+                                if hasattr(temp_bot, "_bot") and hasattr(
+                                    temp_bot._bot, "_session"
+                                ):
+                                    await temp_bot._bot._session.close()
+                                elif hasattr(temp_bot, "_request") and hasattr(
                                     temp_bot._request, "_session"
                                 ):
                                     await temp_bot._request._session.close()
+
+                            # Restart polling with clean state
+                            if (
+                                hasattr(self.application.updater, "_running")
+                                and not self.application.updater._running
+                            ):
+                                logger.info("Restarting polling with clean state...")
+                                await self.application.updater.start_polling(
+                                    poll_interval=3.0,  # Slightly slower to reduce errors
+                                    timeout=15,  # Reduced timeout
+                                    drop_pending_updates=True,  # Force drop any remaining pending
+                                    allowed_updates=["message", "callback_query"],
+                                )
+                                logger.info("Polling restarted successfully")
+
                         except Exception as recovery_error:
-                            logger.warning(
-                                f"Update recovery attempt failed: {recovery_error}"
+                            logger.error(
+                                f"Enhanced update recovery failed: {recovery_error}"
                             )
 
-                    # Check if we're getting too many JSON errors
+                    # Check if we're getting too many JSON errors and implement circuit breaker
                     json_error_count = self.stats.get("json_parse_errors_today", 0)
-                    if json_error_count > 10:  # More than 10 JSON errors today
+                    if json_error_count > 5:  # Lower threshold for faster response
                         logger.warning(
-                            f"High JSON error count ({json_error_count}), implementing delay"
+                            f"High JSON error count ({json_error_count}), implementing progressive delay"
                         )
-                        await asyncio.sleep(5)  # Brief pause to let things stabilize
+                        # Progressive delay based on error count
+                        delay = min(json_error_count * 2, 30)  # Max 30 seconds
+                        await asyncio.sleep(delay)
+
+                        # If errors are very high, restart the entire bot application
+                        if json_error_count > 20:
+                            logger.error(
+                                "Critical JSON error count reached, attempting bot restart..."
+                            )
+                            try:
+                                await self._restart_bot_application()
+                            except Exception as restart_error:
+                                logger.error(f"Bot restart failed: {restart_error}")
 
                 except Exception as json_recovery_error:
-                    logger.error(f"Error in JSON error recovery: {json_recovery_error}")
+                    logger.error(
+                        f"Error in enhanced JSON error recovery: {json_recovery_error}"
+                    )
 
                 # Don't respond to user for JSON errors, just log and recover
                 return
@@ -1882,7 +1989,7 @@ Time: {datetime.now().strftime('%H:%M:%S')}"""
                 # Network connectivity issues
                 logger.warning(f"Network connectivity issue: {error_message}")
 
-                # Implement exponential backoff for network errors
+                # Enhanced exponential backoff for network errors
                 retry_count = getattr(self, "_network_retry_count", 0)
                 if retry_count < 5:  # Max 5 retries
                     self._network_retry_count = retry_count + 1
@@ -1891,6 +1998,24 @@ Time: {datetime.now().strftime('%H:%M:%S')}"""
                         f"Network error retry {retry_count + 1}/5, waiting {wait_time}s"
                     )
                     await asyncio.sleep(wait_time)
+
+                    # Try to restart connection after network error
+                    try:
+                        if (
+                            hasattr(self.application, "updater")
+                            and self.application.updater
+                        ):
+                            await self.application.updater.stop()
+                            await asyncio.sleep(2)
+                            await self.application.updater.start_polling(
+                                poll_interval=3.0,
+                                timeout=20,
+                                drop_pending_updates=True,
+                                allowed_updates=["message", "callback_query"],
+                            )
+                            logger.info("Network connection reestablished")
+                    except Exception as network_restart_error:
+                        logger.error(f"Network restart failed: {network_restart_error}")
                 else:
                     # Reset retry count after max retries
                     self._network_retry_count = 0
@@ -1902,20 +2027,58 @@ Time: {datetime.now().strftime('%H:%M:%S')}"""
                 return
 
             elif "ConnectTimeout" in error_message or "ReadTimeout" in error_message:
-                # Telegram API timeout
+                # Telegram API timeout - implement better timeout handling
                 logger.warning(f"Telegram API timeout: {error_message}")
-                # Don't respond to prevent cascade of timeouts
+
+                # Track timeout errors
+                await self._increment_stat("errors_timeout_today")
+
+                # If we're getting too many timeouts, adjust polling settings
+                timeout_count = self.stats.get("errors_timeout_today", 0)
+                if timeout_count > 10:
+                    logger.warning(
+                        f"High timeout count ({timeout_count}), adjusting polling settings"
+                    )
+                    try:
+                        if (
+                            hasattr(self.application, "updater")
+                            and self.application.updater
+                        ):
+                            await self.application.updater.stop()
+                            await asyncio.sleep(3)
+                            # Restart with more conservative settings
+                            await self.application.updater.start_polling(
+                                poll_interval=5.0,  # Slower polling
+                                timeout=30,  # Longer timeout
+                                drop_pending_updates=True,
+                                allowed_updates=["message", "callback_query"],
+                            )
+                            logger.info(
+                                "Adjusted polling settings for timeout resilience"
+                            )
+                    except Exception as timeout_adjust_error:
+                        logger.error(
+                            f"Timeout adjustment failed: {timeout_adjust_error}"
+                        )
+
                 return
 
             elif "Conflict" in error_message and "webhook" in error_message.lower():
                 # Webhook conflict (multiple bot instances)
                 logger.error(f"Webhook conflict detected: {error_message}")
-                # This is a critical configuration issue
+                # This is a critical configuration issue - try to resolve
+                try:
+                    temp_bot = Bot(token=self.bot_token)
+                    await temp_bot.delete_webhook()
+                    logger.info("Webhook deleted to resolve conflict")
+                except Exception as webhook_error:
+                    logger.error(f"Failed to delete webhook: {webhook_error}")
                 return
 
             elif "BadRequest" in error_message:
                 # Invalid request to Telegram API
                 logger.warning(f"Bad request to Telegram API: {error_message}")
+                await self._increment_stat("errors_bad_request_today")
 
                 # Try to respond to user if we have an update
                 if isinstance(update, Update) and update.effective_chat:
@@ -1941,6 +2104,7 @@ Time: {datetime.now().strftime('%H:%M:%S')}"""
             ):
                 # Service initialization issue
                 logger.error(f"Service initialization error: {error_message}")
+                await self._increment_stat("errors_service_init_today")
 
                 if isinstance(update, Update) and update.effective_chat:
                     try:
@@ -1960,6 +2124,7 @@ Time: {datetime.now().strftime('%H:%M:%S')}"""
             else:
                 # Generic error handling
                 logger.error(f"Unhandled error in telegram bot: {error_message}")
+                await self._increment_stat("errors_unknown_today")
 
                 # Try to send a generic error message to user
                 if isinstance(update, Update) and update.effective_chat:
@@ -1990,6 +2155,58 @@ Time: {datetime.now().strftime('%H:%M:%S')}"""
         except Exception as stats_error:
             logger.error(f"Error updating error statistics: {stats_error}")
 
+    async def _restart_bot_application(self):
+        """Restart the bot application to recover from critical errors"""
+        try:
+            logger.info("Attempting to restart bot application...")
+
+            # Stop current application
+            if hasattr(self, "application") and self.application:
+                await self.application.stop()
+                await self.application.shutdown()
+
+            # Wait for cleanup
+            await asyncio.sleep(5)
+
+            # Recreate application with enhanced settings
+            from telegram.ext import Application
+
+            self.application = (
+                Application.builder()
+                .token(self.bot_token)
+                .concurrent_updates(128)  # Reduced from 256
+                .pool_timeout(45)
+                .connect_timeout(45)
+                .read_timeout(45)
+                .write_timeout(45)
+                .build()
+            )
+
+            # Re-setup handlers
+            await self._setup_handlers()
+
+            # Initialize and start
+            await self.application.initialize()
+            await self.application.start()
+
+            # Start polling with conservative settings
+            await self.application.updater.start_polling(
+                poll_interval=4.0,
+                timeout=25,
+                drop_pending_updates=True,
+                allowed_updates=["message", "callback_query"],
+            )
+
+            logger.info("Bot application restarted successfully")
+
+            # Reset error counts after successful restart
+            self.stats["json_parse_errors_today"] = 0
+            self.stats["errors_timeout_today"] = 0
+
+        except Exception as restart_error:
+            logger.error(f"Failed to restart bot application: {restart_error}")
+            raise
+
     async def _track_error_type(self, error_message: str):
         """Track different types of errors for monitoring"""
         try:
@@ -2019,7 +2236,7 @@ Time: {datetime.now().strftime('%H:%M:%S')}"""
 
     # Bot Control
     async def start(self) -> Application:
-        """Start the bot with enhanced instance conflict prevention"""
+        """Start the bot with enhanced instance conflict prevention and JSON error resilience"""
         logger.info("Initializing Multi-User Trading Bot...")
 
         # Enhanced bot instance conflict prevention
@@ -2032,20 +2249,47 @@ Time: {datetime.now().strftime('%H:%M:%S')}"""
                 await temp_bot.get_me()
                 logger.info("Bot token verified successfully")
 
-                # Clear any pending updates to prevent conflicts
+                # Clear any pending updates to prevent conflicts and JSON errors
                 logger.info("Clearing pending updates...")
-                await temp_bot.get_updates(offset=-1, limit=1, timeout=1)
-                logger.info("Pending updates cleared")
+                try:
+                    # Use multiple calls to ensure all updates are cleared
+                    for i in range(3):  # Try up to 3 times
+                        updates = await temp_bot.get_updates(
+                            offset=-1,
+                            limit=100,
+                            timeout=5,
+                            allowed_updates=["message", "callback_query"],
+                        )
+                        if not updates:
+                            break
+
+                        last_update_id = max(update.update_id for update in updates)
+                        await temp_bot.get_updates(
+                            offset=last_update_id + 1, limit=1, timeout=1
+                        )
+                        logger.info(
+                            f"Cleared {len(updates)} pending updates (attempt {i+1})"
+                        )
+
+                    logger.info("All pending updates cleared successfully")
+                except Exception as clear_error:
+                    logger.warning(f"Error clearing updates: {clear_error}")
+                    # Continue anyway
 
             except Exception as token_error:
                 logger.error(f"Bot token verification failed: {token_error}")
                 raise ValueError(f"Invalid bot token or network issue: {token_error}")
             finally:
-                # Close temporary bot session
-                if hasattr(temp_bot, "_request") and hasattr(
-                    temp_bot._request, "_session"
-                ):
-                    await temp_bot._request._session.close()
+                # Close temporary bot session properly
+                try:
+                    if hasattr(temp_bot, "_bot") and hasattr(temp_bot._bot, "_session"):
+                        await temp_bot._bot._session.close()
+                    elif hasattr(temp_bot, "_request") and hasattr(
+                        temp_bot._request, "_session"
+                    ):
+                        await temp_bot._request._session.close()
+                except Exception as close_error:
+                    logger.warning(f"Error closing temp bot session: {close_error}")
 
         except Exception as e:
             logger.error(f"Error during bot instance check: {e}")
@@ -2057,15 +2301,15 @@ Time: {datetime.now().strftime('%H:%M:%S')}"""
         # Initialize rate limiter and other services
         await self.initialize()
 
-        # Build application with optimized settings for high-load production
+        # Build application with optimized settings for high-load production and JSON error resilience
         application = (
             Application.builder()
             .token(self.bot_token)
-            .concurrent_updates(256)  # Support more concurrent updates
-            .pool_timeout(30)
-            .connect_timeout(30)
-            .read_timeout(30)
-            .write_timeout(30)
+            .concurrent_updates(128)  # Reduced from 256 to prevent overload
+            .pool_timeout(45)  # Increased timeouts for stability
+            .connect_timeout(45)
+            .read_timeout(45)
+            .write_timeout(45)
             .build()
         )
 
@@ -2082,25 +2326,27 @@ Time: {datetime.now().strftime('%H:%M:%S')}"""
         await application.initialize()
 
         # Start polling with optimized settings
-        logger.info("Starting bot polling with production optimization...")
+        logger.info("Starting bot polling with enhanced error resilience...")
         await application.start()
 
-        # Use more efficient polling settings with enhanced error recovery
+        # Use more conservative polling settings to prevent JSON errors
         await application.updater.start_polling(
-            poll_interval=2.0,  # Increased from 1.0 to reduce CPU usage
-            timeout=20,  # Timeout for getting updates
+            poll_interval=3.0,  # Increased from 2.0 to reduce load and errors
+            timeout=25,  # Reduced from 20 for faster error detection
             drop_pending_updates=True,  # Clear pending updates to avoid backlog
             allowed_updates=[
                 "message",
                 "callback_query",
-                "inline_query",
-            ],  # Only handle needed updates
+            ],  # Removed inline_query to reduce complexity
         )
 
-        # Start background cleanup task for memory optimization
+        # Start background cleanup task for memory optimization and error prevention
         asyncio.create_task(self._periodic_cleanup())
+        asyncio.create_task(self._periodic_health_check())
 
-        logger.info("Multi-User Trading Bot started successfully!")
+        logger.info(
+            "Multi-User Trading Bot started successfully with enhanced error resilience!"
+        )
         logger.info(f"Bot username: @{application.bot.username}")
 
         return application
@@ -2247,6 +2493,138 @@ Time: {datetime.now().strftime('%H:%M:%S')}"""
             "system_healthy": self.system_healthy,
             "maintenance_mode": self.maintenance_mode,
         }
+
+    async def _periodic_health_check(self):
+        """Periodic health check to prevent JSON errors and maintain bot stability"""
+        while True:
+            try:
+                await asyncio.sleep(300)  # Check every 5 minutes
+
+                if not self.running:
+                    break
+
+                # Check JSON error rate
+                json_errors = self.stats.get("json_parse_errors_today", 0)
+                timeout_errors = self.stats.get("errors_timeout_today", 0)
+                total_errors = self.stats.get("errors_today", 0)
+
+                logger.info(
+                    f"Health check: JSON errors: {json_errors}, Timeout errors: {timeout_errors}, Total errors: {total_errors}"
+                )
+
+                # If error rates are high, proactively restart polling
+                if json_errors > 3 or timeout_errors > 15 or total_errors > 50:
+                    logger.warning(
+                        f"High error rates detected, performing preventive restart..."
+                    )
+                    try:
+                        if (
+                            hasattr(self.application, "updater")
+                            and self.application.updater
+                        ):
+                            await self.application.updater.stop()
+                            await asyncio.sleep(3)
+
+                            # Clear any pending updates
+                            temp_bot = Bot(token=self.bot_token)
+                            try:
+                                updates = await temp_bot.get_updates(
+                                    offset=-1, limit=50, timeout=3
+                                )
+                                if updates:
+                                    last_id = max(
+                                        update.update_id for update in updates
+                                    )
+                                    await temp_bot.get_updates(
+                                        offset=last_id + 1, limit=1, timeout=1
+                                    )
+                                    logger.info(
+                                        f"Cleared {len(updates)} updates during health check"
+                                    )
+                            except Exception as clear_error:
+                                logger.warning(
+                                    f"Update clear during health check failed: {clear_error}"
+                                )
+                            finally:
+                                if hasattr(temp_bot, "_bot") and hasattr(
+                                    temp_bot._bot, "_session"
+                                ):
+                                    await temp_bot._bot._session.close()
+                                elif hasattr(temp_bot, "_request") and hasattr(
+                                    temp_bot._request, "_session"
+                                ):
+                                    await temp_bot._request._session.close()
+
+                            # Restart with clean settings
+                            await self.application.updater.start_polling(
+                                poll_interval=3.0,
+                                timeout=25,
+                                drop_pending_updates=True,
+                                allowed_updates=["message", "callback_query"],
+                            )
+
+                            logger.info("Preventive restart completed successfully")
+
+                            # Reset some error counters after successful restart
+                            self.stats["json_parse_errors_today"] = max(
+                                0, json_errors - 2
+                            )
+                            self.stats["errors_timeout_today"] = max(
+                                0, timeout_errors - 5
+                            )
+
+                    except Exception as restart_error:
+                        logger.error(f"Preventive restart failed: {restart_error}")
+
+                # Check if bot is responsive
+                try:
+                    if hasattr(self.application, "bot"):
+                        await self.application.bot.get_me()
+                        logger.debug("Bot responsiveness check passed")
+                except Exception as responsiveness_error:
+                    logger.warning(
+                        f"Bot responsiveness check failed: {responsiveness_error}"
+                    )
+
+            except Exception as health_check_error:
+                logger.error(f"Health check error: {health_check_error}")
+                await asyncio.sleep(60)  # Wait before next check if error occurred
+
+    async def shutdown(self):
+        """Shutdown the bot gracefully"""
+        logger.info("Shutting down Multi-User Trading Bot...")
+
+        self.running = False
+
+        try:
+            # Stop background workers
+            for worker in self.notification_workers:
+                if not worker.done():
+                    worker.cancel()
+
+            # Wait for workers to finish
+            if self.notification_workers:
+                await asyncio.gather(*self.notification_workers, return_exceptions=True)
+
+            # Stop the application
+            if hasattr(self, "application") and self.application:
+                if hasattr(self.application, "updater") and self.application.updater:
+                    await self.application.updater.stop()
+                await self.application.stop()
+                await self.application.shutdown()
+
+            # Close user service
+            if hasattr(user_service, "close"):
+                await user_service.close()
+
+            # Close database connections
+            if hasattr(multi_user_db, "close"):
+                await multi_user_db.close()
+
+            logger.info("Bot shutdown completed")
+
+        except Exception as shutdown_error:
+            logger.error(f"Error during shutdown: {shutdown_error}")
 
 
 # Global bot instance

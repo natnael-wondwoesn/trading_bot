@@ -622,43 +622,51 @@ Type `/help` for a complete list of commands! 🤖"""
             )
             return
 
+        # Get current settings
+        current_exchange = user_context.settings.get("exchange", "MEXC")
+        current_strategy = user_context.settings.get("strategy", "RSI_EMA")
+
         # Create personalized settings menu
         keyboard = [
             [
                 InlineKeyboardButton(
+                    f"🏦 Exchange: {current_exchange}",
+                    callback_data=f"settings_exchange_{user_context.user.user_id}",
+                ),
+                InlineKeyboardButton(
                     "🔧 Strategy",
                     callback_data=f"settings_strategy_{user_context.user.user_id}",
                 ),
+            ],
+            [
                 InlineKeyboardButton(
                     "💰 Risk Mgmt",
                     callback_data=f"settings_risk_{user_context.user.user_id}",
                 ),
-            ],
-            [
                 InlineKeyboardButton(
                     "📱 Notifications",
                     callback_data=f"settings_notifications_{user_context.user.user_id}",
                 ),
+            ],
+            [
                 InlineKeyboardButton(
                     "🚨 Emergency",
                     callback_data=f"settings_emergency_{user_context.user.user_id}",
                 ),
-            ],
-            [
                 InlineKeyboardButton(
                     "📊 View All",
                     callback_data=f"settings_view_{user_context.user.user_id}",
                 ),
+            ],
+            [
                 InlineKeyboardButton(
                     "🔄 Reset",
                     callback_data=f"settings_reset_{user_context.user.user_id}",
                 ),
-            ],
-            [
                 InlineKeyboardButton(
                     "❌ Close",
                     callback_data=f"settings_close_{user_context.user.user_id}",
-                )
+                ),
             ],
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -668,7 +676,12 @@ Type `/help` for a complete list of commands! 🤖"""
 👤 **User:** {user_context.user.first_name or user_context.user.username}
 🎯 **Plan:** {user_context.user.subscription_tier.title()}
 
-Configure your trading preferences:"""
+**Current Configuration:**
+🏦 **Exchange:** {current_exchange}
+🔧 **Strategy:** {current_strategy}
+⚡ **Status:** {'🟢 Active' if user_context.settings.get('trading_enabled', True) else '🔴 Paused'}
+
+**Configure your trading preferences:**"""
 
         await update.message.reply_text(
             settings_text, parse_mode="Markdown", reply_markup=reply_markup
@@ -677,73 +690,345 @@ Configure your trading preferences:"""
     async def _handle_dashboard(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
-        """Handle /dashboard command"""
+        """Handle /dashboard command with exchange-specific data"""
         user_context = await self._get_user_context(update.effective_user.id, update)
         if not user_context:
             return
 
         await self._increment_stat("commands_processed_today")
 
-        # Get comprehensive dashboard data
-        dashboard_data = await user_service.get_user_dashboard_data(
-            user_context.user.user_id
+        # Get user's selected exchange
+        selected_exchange = user_context.settings.get("exchange", "MEXC")
+
+        # Send loading message
+        loading_msg = await update.message.reply_text(
+            f"📊 Loading {selected_exchange} dashboard...", parse_mode="Markdown"
         )
 
-        if not dashboard_data:
-            await update.message.reply_text("❌ Unable to load dashboard data.")
-            return
+        try:
+            # Get account data from the selected exchange
+            account_data = await self._get_exchange_account_data(
+                user_context.user.user_id, selected_exchange
+            )
 
-        # Format dashboard message
-        dashboard_text = f"""📊 **TRADING DASHBOARD**
+            if not account_data:
+                await loading_msg.edit_text(
+                    f"❌ Unable to load {selected_exchange} account data.\n\n"
+                    "Please check your API configuration in settings."
+                )
+                return
 
-👤 **Account Info:**
-• Plan: {dashboard_data['user_info']['subscription_tier'].title()}
-• Member Since: {datetime.fromisoformat(dashboard_data['user_info']['member_since']).strftime('%b %Y')}
+            # Format comprehensive dashboard
+            dashboard_text = await self._format_dashboard_message(
+                user_context, selected_exchange, account_data
+            )
 
-📈 **Today's Performance:**
-• Trades: {dashboard_data['daily_stats']['total_trades']}
-• Wins: {dashboard_data['daily_stats']['winning_trades']} 
+            # Create action buttons
+            keyboard = [
+                [
+                    InlineKeyboardButton(
+                        "🔄 Refresh",
+                        callback_data=f"dashboard_refresh_{user_context.user.user_id}",
+                    ),
+                    InlineKeyboardButton(
+                        "📈 Positions",
+                        callback_data=f"dashboard_positions_{user_context.user.user_id}",
+                    ),
+                ],
+                [
+                    InlineKeyboardButton(
+                        "💼 Portfolio",
+                        callback_data=f"dashboard_portfolio_{user_context.user.user_id}",
+                    ),
+                    InlineKeyboardButton(
+                        "📊 History",
+                        callback_data=f"dashboard_history_{user_context.user.user_id}",
+                    ),
+                ],
+                [
+                    InlineKeyboardButton(
+                        "🏦 Switch Exchange",
+                        callback_data=f"settings_exchange_{user_context.user.user_id}",
+                    ),
+                    InlineKeyboardButton(
+                        "⚙️ Settings",
+                        callback_data=f"settings_back_{user_context.user.user_id}",
+                    ),
+                ],
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
+            await loading_msg.edit_text(
+                dashboard_text, parse_mode="Markdown", reply_markup=reply_markup
+            )
+
+        except Exception as e:
+            logger.error(f"Error loading dashboard: {e}")
+            await loading_msg.edit_text(
+                f"❌ Error loading {selected_exchange} dashboard.\n\n"
+                f"Please try again or check your settings."
+            )
+
+    async def _get_exchange_account_data(self, user_id: int, exchange: str) -> Dict:
+        """Get account data from the specified exchange"""
+        try:
+            if exchange == "MEXC":
+                return await self._get_mexc_account_data(user_id)
+            elif exchange == "Bybit":
+                return await self._get_bybit_account_data(user_id)
+            else:
+                logger.error(f"Unsupported exchange: {exchange}")
+                return None
+        except Exception as e:
+            logger.error(f"Error getting {exchange} account data: {e}")
+            return None
+
+    async def _get_mexc_account_data(self, user_id: int) -> Dict:
+        """Get MEXC account data"""
+        try:
+            # Import MEXC client
+            from mexc.mexc_client import MEXCClient
+            from config.config import Config
+
+            # Create MEXC client (you might want to get user-specific API keys)
+            mexc_client = MEXCClient(Config.MEXC_API_KEY, Config.MEXC_API_SECRET)
+
+            # Get account info
+            account_info = await mexc_client.get_account()
+
+            # Get balance data
+            balance_data = await mexc_client.get_balance()
+
+            # Get open orders
+            open_orders = await mexc_client.get_open_orders()
+
+            # Calculate total balance value
+            total_balance = 0
+            balances = []
+
+            for asset, balance in balance_data.items():
+                total_free = balance.get("free", 0)
+                total_locked = balance.get("locked", 0)
+                total_asset = total_free + total_locked
+
+                if total_asset > 0:
+                    balances.append(
+                        {
+                            "asset": asset,
+                            "free": total_free,
+                            "locked": total_locked,
+                            "total": total_asset,
+                        }
+                    )
+
+                    # For simplicity, count USDT as 1:1, others would need price conversion
+                    if asset in ["USDT", "USDC", "BUSD"]:
+                        total_balance += total_asset
+
+            await mexc_client.close()
+
+            return {
+                "exchange": "MEXC",
+                "account_info": account_info,
+                "balances": balances,
+                "total_balance_usdt": total_balance,
+                "open_orders": len(open_orders),
+                "api_status": "connected",
+            }
+
+        except Exception as e:
+            logger.error(f"Error getting MEXC account data: {e}")
+            return {"exchange": "MEXC", "api_status": "error", "error_message": str(e)}
+
+    async def _get_bybit_account_data(self, user_id: int) -> Dict:
+        """Get Bybit account data"""
+        try:
+            # Import Bybit client
+            from bybit.bybit_client import BybitClient
+            from config.config import Config
+
+            # Create Bybit client (you might want to get user-specific API keys)
+            async with BybitClient(
+                Config.BYBIT_API_KEY, Config.BYBIT_API_SECRET
+            ) as bybit_client:
+
+                # Get wallet balance
+                wallet_response = await bybit_client.get_wallet_balance()
+
+                # Get account info
+                account_info = await bybit_client.get_account_info()
+
+                # Get open orders (this returns a list directly)
+                open_orders_list = await bybit_client.get_open_orders()
+
+                # Process balance data
+                total_balance = 0
+                balances = []
+
+                # Parse wallet response - Bybit returns nested structure
+                if isinstance(wallet_response, dict):
+                    wallet_list = wallet_response.get("result", {}).get("list", [])
+                    if wallet_list and len(wallet_list) > 0:
+                        # Get the first wallet (usually UNIFIED account)
+                        first_wallet = wallet_list[0]
+                        if isinstance(first_wallet, dict):
+                            coins = first_wallet.get("coin", [])
+                            for coin_data in coins:
+                                if isinstance(coin_data, dict):
+                                    wallet_balance = float(
+                                        coin_data.get("walletBalance", "0")
+                                    )
+                                    locked_balance = float(coin_data.get("locked", "0"))
+                                    available_balance = wallet_balance - locked_balance
+                                    coin_symbol = coin_data.get("coin", "")
+
+                                    if wallet_balance > 0:
+                                        balances.append(
+                                            {
+                                                "asset": coin_symbol,
+                                                "free": available_balance,
+                                                "locked": locked_balance,
+                                                "total": wallet_balance,
+                                            }
+                                        )
+
+                                        # Count USDT value
+                                        if coin_symbol in ["USDT", "USDC"]:
+                                            total_balance += wallet_balance
+
+                # Alternative: Try using get_balance method if wallet_balance fails
+                if not balances:
+                    try:
+                        balance_response = await bybit_client.get_balance()
+                        if isinstance(balance_response, dict):
+                            for asset, balance_info in balance_response.items():
+                                if isinstance(balance_info, dict):
+                                    free_balance = balance_info.get("free", 0)
+                                    locked_balance = balance_info.get("locked", 0)
+                                    total_asset_balance = free_balance + locked_balance
+
+                                    if total_asset_balance > 0:
+                                        balances.append(
+                                            {
+                                                "asset": asset,
+                                                "free": free_balance,
+                                                "locked": locked_balance,
+                                                "total": total_asset_balance,
+                                            }
+                                        )
+
+                                        if asset in ["USDT", "USDC"]:
+                                            total_balance += total_asset_balance
+                    except Exception as balance_error:
+                        logger.warning(
+                            f"Failed to get balance via alternative method: {balance_error}"
+                        )
+
+                return {
+                    "exchange": "Bybit",
+                    "account_info": account_info,
+                    "balances": balances,
+                    "total_balance_usdt": total_balance,
+                    "open_orders": (
+                        len(open_orders_list)
+                        if isinstance(open_orders_list, list)
+                        else 0
+                    ),
+                    "api_status": "connected",
+                }
+
+        except Exception as e:
+            logger.error(f"Error getting Bybit account data: {e}")
+            return {"exchange": "Bybit", "api_status": "error", "error_message": str(e)}
+
+    async def _format_dashboard_message(
+        self, user_context: UserContext, exchange: str, account_data: Dict
+    ) -> str:
+        """Format the dashboard message"""
+        try:
+            if account_data.get("api_status") == "error":
+                return f"""📊 **{exchange.upper()} DASHBOARD**
+
+❌ **API Connection Error**
+
+{account_data.get('error_message', 'Unknown error')}
+
+**Troubleshooting:**
+• Check API key configuration
+• Verify API permissions
+• Ensure API keys are valid
+• Check network connectivity
+
+Use ⚙️ Settings to configure your API keys."""
+
+            # Get user dashboard data
+            dashboard_data = await user_service.get_user_dashboard_data(
+                user_context.user.user_id
+            )
+
+            balances = account_data.get("balances", [])
+            total_balance = account_data.get("total_balance_usdt", 0)
+            open_orders = account_data.get("open_orders", 0)
+
+            dashboard_text = f"""📊 **{exchange.upper()} DASHBOARD**
+
+👤 **Account Overview**
+🏦 Exchange: {exchange}
+💰 Total Balance: ${total_balance:,.2f} USDT
+📈 Open Orders: {open_orders}
+⚡ Status: {'🟢 Connected' if account_data.get('api_status') == 'connected' else '🔴 Disconnected'}
+
+💼 **Portfolio Breakdown**"""
+
+            # Show top balances
+            if balances:
+                sorted_balances = sorted(
+                    balances, key=lambda x: x["total"], reverse=True
+                )
+                for balance in sorted_balances[:5]:  # Show top 5 assets
+                    asset = balance["asset"]
+                    total = balance["total"]
+                    free = balance["free"]
+                    locked = balance["locked"]
+
+                    dashboard_text += f"""
+• **{asset}**: {total:,.4f}
+  └ Available: {free:,.4f} | Locked: {locked:,.4f}"""
+
+                if len(balances) > 5:
+                    dashboard_text += f"\n  └ ... and {len(balances) - 5} more assets"
+            else:
+                dashboard_text += "\n• No assets found"
+
+            # Add trading performance from database
+            if dashboard_data:
+                dashboard_text += f"""
+
+📈 **Trading Performance**
+• Today's Trades: {dashboard_data['daily_stats']['total_trades']}
 • Win Rate: {dashboard_data['daily_stats']['win_rate']:.1f}%
-• P&L: ${dashboard_data['daily_stats']['total_pnl']:.2f}
+• Today's P&L: ${dashboard_data['daily_stats']['total_pnl']:.2f}
+• This Week: {dashboard_data['performance_summary']['total_trades_7d']} trades
 
-💼 **Current Status:**
-• Open Positions: {dashboard_data['open_trades']}
-• Daily Limit: {dashboard_data['usage']['daily_trades_used']:.1f}% used
-• Position Limit: {dashboard_data['usage']['positions_used']:.1f}% used
+📊 **Account Limits**
+• Plan: {dashboard_data['user_info']['subscription_tier'].title()}
+• Daily Usage: {dashboard_data['usage']['daily_trades_used']:.1f}%
+• Position Usage: {dashboard_data['usage']['positions_used']:.1f}%"""
 
-📊 **7-Day Summary:**
-• Total Trades: {dashboard_data['performance_summary']['total_trades_7d']}
-• Avg Win Rate: {dashboard_data['performance_summary']['win_rate_7d']:.1f}%
-• Avg Daily P&L: ${dashboard_data['performance_summary']['avg_daily_pnl']:.2f}"""
+            dashboard_text += f"""
 
-        # Add action buttons
-        keyboard = [
-            [
-                InlineKeyboardButton(
-                    "📈 Performance",
-                    callback_data=f"dashboard_performance_{user_context.user.user_id}",
-                ),
-                InlineKeyboardButton(
-                    "⚙️ Settings",
-                    callback_data=f"dashboard_settings_{user_context.user.user_id}",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    "🔄 Refresh",
-                    callback_data=f"dashboard_refresh_{user_context.user.user_id}",
-                ),
-                InlineKeyboardButton(
-                    "📱 Share",
-                    callback_data=f"dashboard_share_{user_context.user.user_id}",
-                ),
-            ],
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
+🕐 **Last Updated:** {datetime.now().strftime('%H:%M:%S')}
+🔄 Use "Refresh" to update data"""
 
-        await update.message.reply_text(
-            dashboard_text, parse_mode="Markdown", reply_markup=reply_markup
-        )
+            return dashboard_text
+
+        except Exception as e:
+            logger.error(f"Error formatting dashboard: {e}")
+            return f"""📊 **{exchange.upper()} DASHBOARD**
+
+❌ **Error formatting dashboard data**
+
+Please try refreshing or contact support if the issue persists."""
 
     async def _handle_subscription(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -881,22 +1166,8 @@ Ready to upgrade your trading experience?"""
             await self._handle_settings_callback(query, action, user_context)
         elif action_type == "dashboard":
             await self._handle_dashboard_callback(query, action, user_context)
-        elif action_type == "upgrade":
-            await self._handle_upgrade_callback(query, action, user_context)
-        elif action_type == "emergency":
-            await self._handle_emergency_callback(query, action, user_context)
-        elif action_type == "support":
-            await self._handle_support_callback(query, action, user_context)
-        elif action_type == "performance":
-            await self._handle_performance_callback(query, action, user_context)
-        elif action_type == "billing":
-            await self._handle_billing_callback(query, action, user_context)
-        elif action_type == "strategy":
-            await self._handle_strategy_callback(query, action, user_context)
-        elif action_type == "exchange":
-            await self._handle_exchange_callback(query, action, user_context)
-        elif action_type == "exchange_select":
-            # Handle exchange selection (similar to strategy_select)
+        elif action_type == "exchange" and action == "select":
+            # Handle exchange selection
             if len(data_parts) >= 3:
                 exchange_name = data_parts[2]  # exchange_select_MEXC_user_id
                 try:
@@ -909,17 +1180,51 @@ Ready to upgrade your trading experience?"""
                     user_context.settings["exchange"] = exchange_name
 
                     # Notify trading orchestrator of the change
-                    from services.trading_orchestrator import trading_orchestrator
+                    try:
+                        from services.trading_orchestrator import trading_orchestrator
 
-                    await trading_orchestrator.update_user_settings(
-                        user_context.user.user_id
-                    )
+                        await trading_orchestrator.update_user_settings(
+                            user_context.user.user_id
+                        )
+                    except Exception as orchestrator_error:
+                        logger.warning(
+                            f"Could not notify trading orchestrator: {orchestrator_error}"
+                        )
+
+                    success_message = f"""✅ **Exchange Updated Successfully!**
+
+🏦 **New Exchange:** {exchange_name}
+
+**What changed:**
+• All trading operations will use {exchange_name}
+• Dashboard will show {exchange_name} account info
+• Balance and portfolio data from {exchange_name}
+• Order management through {exchange_name} API
+
+Your trading settings have been updated. Use `/dashboard` to view your {exchange_name} account information.
+
+**Next Steps:**
+• Check your `/dashboard` for account details
+• Verify your API keys are configured
+• Review your trading settings"""
+
+                    keyboard = [
+                        [
+                            InlineKeyboardButton(
+                                "📊 View Dashboard",
+                                callback_data=f"dashboard_refresh_{user_context.user.user_id}",
+                            ),
+                            InlineKeyboardButton(
+                                "⚙️ Settings",
+                                callback_data=f"settings_back_{user_context.user.user_id}",
+                            ),
+                        ]
+                    ]
+                    reply_markup = InlineKeyboardMarkup(keyboard)
 
                     await query.edit_message_text(
-                        f"**Exchange Updated**\n\n"
-                        f"Your trading exchange has been changed to **{exchange_name}**.\n\n"
-                        f"All future trades will be executed on {exchange_name}.\n\n"
-                        f"Use /settings to make further changes.",
+                        success_message,
+                        reply_markup=reply_markup,
                         parse_mode="Markdown",
                     )
 
@@ -928,7 +1233,47 @@ Ready to upgrade your trading experience?"""
                         f"Error updating exchange for user {user_context.user.user_id}: {e}"
                     )
                     await query.edit_message_text(
-                        "Failed to update exchange. Please try again."
+                        "❌ Failed to update exchange. Please try again."
+                    )
+        elif action_type == "strategy" and action == "select":
+            # Handle strategy selection
+            if len(data_parts) >= 4:
+                strategy_name = data_parts[2]  # strategy_select_RSI_EMA_user_id
+                try:
+                    # Update user strategy in database
+                    await user_service.update_user_settings(
+                        user_context.user.user_id, strategy=strategy_name
+                    )
+
+                    # Update local settings
+                    user_context.settings["strategy"] = strategy_name
+
+                    # Notify trading orchestrator of the change
+                    try:
+                        from services.trading_orchestrator import trading_orchestrator
+
+                        await trading_orchestrator.update_user_settings(
+                            user_context.user.user_id
+                        )
+                    except Exception as orchestrator_error:
+                        logger.warning(
+                            f"Could not notify trading orchestrator: {orchestrator_error}"
+                        )
+
+                    await query.edit_message_text(
+                        f"✅ **Strategy Updated Successfully!**\n\n"
+                        f"**New Strategy:** {strategy_name}\n\n"
+                        f"Your new strategy will be used for all future signals.\n\n"
+                        f"**Note:** This change takes effect immediately for new trades.",
+                        parse_mode="Markdown",
+                    )
+
+                except Exception as e:
+                    logger.error(
+                        f"Error updating strategy for user {user_context.user.user_id}: {e}"
+                    )
+                    await query.edit_message_text(
+                        "❌ Failed to update strategy. Please try again."
                     )
         else:
             await query.edit_message_text("Unknown action.")
@@ -938,7 +1283,61 @@ Ready to upgrade your trading experience?"""
     ):
         """Handle settings callback actions"""
         try:
-            if action == "strategy":
+            if action == "exchange":
+                # Exchange selection interface
+                current_exchange = user_context.settings.get("exchange", "MEXC")
+
+                keyboard = [
+                    [
+                        InlineKeyboardButton(
+                            f"{'[✓] MEXC' if current_exchange == 'MEXC' else 'MEXC'}",
+                            callback_data=f"exchange_select_MEXC_{user_context.user.user_id}",
+                        ),
+                        InlineKeyboardButton(
+                            f"{'[✓] Bybit' if current_exchange == 'Bybit' else 'Bybit'}",
+                            callback_data=f"exchange_select_Bybit_{user_context.user.user_id}",
+                        ),
+                    ],
+                    [
+                        InlineKeyboardButton(
+                            "← Back to Settings",
+                            callback_data=f"settings_back_{user_context.user.user_id}",
+                        )
+                    ],
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+
+                exchange_text = f"""🏦 **EXCHANGE SELECTION**
+
+**Current Exchange:** {current_exchange}
+
+**Available Exchanges:**
+
+📊 **MEXC**
+• Spot Trading ✅
+• Low Fees ✅
+• Wide Selection ✅
+• API v3 Support ✅
+
+📊 **Bybit**  
+• Spot Trading ✅
+• Advanced Features ✅
+• Professional Tools ✅
+• API v5 Support ✅
+
+**Select your preferred exchange:**
+
+⚠️ **Note:** Changing exchange will affect:
+• Balance display
+• Trading operations
+• Order management
+• Portfolio tracking"""
+
+                await query.edit_message_text(
+                    exchange_text, reply_markup=reply_markup, parse_mode="Markdown"
+                )
+
+            elif action == "strategy":
                 # Import here to avoid circular imports
                 from services.trading_orchestrator import StrategyFactory
 
@@ -953,7 +1352,7 @@ Ready to upgrade your trading experience?"""
                 for strategy_name, description in strategies.items():
                     # Add checkmark if current strategy
                     display_name = (
-                        f"[*] {strategy_name}"
+                        f"[✓] {strategy_name}"
                         if strategy_name == current_strategy
                         else strategy_name
                     )
@@ -978,7 +1377,7 @@ Ready to upgrade your trading experience?"""
 
                 reply_markup = InlineKeyboardMarkup(keyboard)
 
-                strategy_text = "**Strategy Selection**\n\n"
+                strategy_text = "**🔧 Strategy Selection**\n\n"
                 strategy_text += f"**Current Strategy:** {current_strategy}\n\n"
                 strategy_text += "**Available Strategies:**\n"
 
@@ -995,39 +1394,124 @@ Ready to upgrade your trading experience?"""
                     strategy_text, reply_markup=reply_markup, parse_mode="Markdown"
                 )
             elif action == "risk":
+                # Risk management settings
+                risk_settings = user_context.settings.get("risk_management", {})
+
+                keyboard = [
+                    [
+                        InlineKeyboardButton(
+                            "🔧 Configure Risk",
+                            callback_data=f"risk_configure_{user_context.user.user_id}",
+                        )
+                    ],
+                    [
+                        InlineKeyboardButton(
+                            "← Back to Settings",
+                            callback_data=f"settings_back_{user_context.user.user_id}",
+                        )
+                    ],
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+
+                risk_text = f"""💰 **RISK MANAGEMENT**
+
+**Current Settings:**
+• Max Risk per Trade: {risk_settings.get('max_risk_per_trade', 0.02)*100:.1f}%
+• Stop Loss (ATR): {risk_settings.get('stop_loss_atr', 2.0)}x
+• Take Profit (ATR): {risk_settings.get('take_profit_atr', 3.0)}x
+• Max Open Positions: {risk_settings.get('max_open_positions', 5)}
+• Trading Enabled: {'✅' if risk_settings.get('trading_enabled', True) else '❌'}
+
+**Risk Level:** {'🟢 Conservative' if risk_settings.get('max_risk_per_trade', 0.02) <= 0.02 else '🟡 Moderate' if risk_settings.get('max_risk_per_trade', 0.02) <= 0.05 else '🔴 Aggressive'}
+
+Configure your risk parameters to match your trading style."""
+
                 await query.edit_message_text(
-                    "**Risk Management**\n\n"
-                    "Max Daily Loss: 5%\n"
-                    "Stop Loss: 2%\n"
-                    "Take Profit: 4%\n\n"
-                    "Use /settings to modify these settings.",
-                    parse_mode="Markdown",
+                    risk_text, reply_markup=reply_markup, parse_mode="Markdown"
                 )
+
             elif action == "notifications":
+                # Notification settings
+                notifications = user_context.settings.get("notifications", {})
+
+                keyboard = [
+                    [
+                        InlineKeyboardButton(
+                            "🔧 Configure Alerts",
+                            callback_data=f"notif_configure_{user_context.user.user_id}",
+                        )
+                    ],
+                    [
+                        InlineKeyboardButton(
+                            "← Back to Settings",
+                            callback_data=f"settings_back_{user_context.user.user_id}",
+                        )
+                    ],
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+
+                notif_text = f"""📱 **NOTIFICATION SETTINGS**
+
+**Current Settings:**
+• Signal Alerts: {'✅' if notifications.get('signal_alerts', True) else '❌'}
+• Trade Execution: {'✅' if notifications.get('trade_execution', True) else '❌'}
+• Risk Warnings: {'✅' if notifications.get('risk_warnings', True) else '❌'}
+
+Stay informed about your trading activity with customizable notifications."""
+
                 await query.edit_message_text(
-                    "**Notification Settings**\n\n"
-                    "Signal Alerts: Enabled\n"
-                    "Trade Updates: Enabled\n"
-                    "System Alerts: Enabled\n\n"
-                    "Use /settings to modify these settings.",
-                    parse_mode="Markdown",
+                    notif_text, reply_markup=reply_markup, parse_mode="Markdown"
                 )
+
             elif action == "view":
+                # View all settings
                 settings = user_context.settings
+                risk_mgmt = settings.get("risk_management", {})
+                notifications = settings.get("notifications", {})
+                emergency = settings.get("emergency", {})
+
+                keyboard = [
+                    [
+                        InlineKeyboardButton(
+                            "← Back to Settings",
+                            callback_data=f"settings_back_{user_context.user.user_id}",
+                        )
+                    ],
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+
+                view_text = f"""📊 **ALL SETTINGS OVERVIEW**
+
+**Exchange & Strategy:**
+🏦 Exchange: {settings.get('exchange', 'MEXC')}
+🔧 Strategy: {settings.get('strategy', 'RSI_EMA')}
+
+**Risk Management:**
+💰 Max Risk: {risk_mgmt.get('max_risk_per_trade', 0.02)*100:.1f}%
+🛑 Stop Loss: {risk_mgmt.get('stop_loss_atr', 2.0)}x ATR
+🎯 Take Profit: {risk_mgmt.get('take_profit_atr', 3.0)}x ATR
+📊 Max Positions: {risk_mgmt.get('max_open_positions', 5)}
+⚡ Trading: {'✅ Enabled' if risk_mgmt.get('trading_enabled', True) else '❌ Disabled'}
+
+**Notifications:**
+🔔 Signal Alerts: {'✅' if notifications.get('signal_alerts', True) else '❌'}
+📈 Trade Updates: {'✅' if notifications.get('trade_execution', True) else '❌'}
+⚠️ Risk Warnings: {'✅' if notifications.get('risk_warnings', True) else '❌'}
+
+**Emergency:**
+🚨 Emergency Mode: {'✅ Active' if emergency.get('emergency_mode', False) else '❌ Inactive'}
+🔒 Auto Close: {'✅' if emergency.get('auto_close_on_loss', False) else '❌'}
+📉 Max Daily Loss: {emergency.get('max_daily_loss', 0.05)*100:.1f}%"""
+
                 await query.edit_message_text(
-                    f"**All Settings**\n\n"
-                    f"Trading Enabled: {settings.get('trading_enabled', True)}\n"
-                    f"Risk Level: {settings.get('risk_level', 'Medium')}\n"
-                    f"Position Size: {settings.get('position_size', 1)}%\n"
-                    f"Stop Loss: {settings.get('stop_loss', 2)}%\n"
-                    f"Take Profit: {settings.get('take_profit', 4)}%",
-                    parse_mode="Markdown",
+                    view_text, reply_markup=reply_markup, parse_mode="Markdown"
                 )
+
             elif action == "back":
                 # Return to main settings menu
                 await self._show_main_settings_menu(query, user_context)
-            elif action == "exchange":
-                await self._handle_exchange_callback(query, "select", user_context)
+            elif action == "close":
+                await query.edit_message_text("⚙️ **Settings closed.**")
             else:
                 await query.edit_message_text("Settings action not implemented yet.")
         except Exception as e:
@@ -1040,510 +1524,318 @@ Ready to upgrade your trading experience?"""
         """Handle dashboard callback actions"""
         try:
             if action == "refresh":
+                # Get user's selected exchange and refresh data
+                selected_exchange = user_context.settings.get("exchange", "MEXC")
+
+                # Show loading
+                await query.edit_message_text(
+                    f"🔄 Refreshing {selected_exchange} dashboard...",
+                    parse_mode="Markdown",
+                )
+
                 try:
-                    # Check if user_service has the required method
-                    if not hasattr(user_service, "get_user_performance"):
+                    # Get fresh account data
+                    account_data = await self._get_exchange_account_data(
+                        user_context.user.user_id, selected_exchange
+                    )
+
+                    if account_data:
+                        # Format updated dashboard
+                        dashboard_text = await self._format_dashboard_message(
+                            user_context, selected_exchange, account_data
+                        )
+
+                        # Recreate action buttons
+                        keyboard = [
+                            [
+                                InlineKeyboardButton(
+                                    "🔄 Refresh",
+                                    callback_data=f"dashboard_refresh_{user_context.user.user_id}",
+                                ),
+                                InlineKeyboardButton(
+                                    "📈 Positions",
+                                    callback_data=f"dashboard_positions_{user_context.user.user_id}",
+                                ),
+                            ],
+                            [
+                                InlineKeyboardButton(
+                                    "💼 Portfolio",
+                                    callback_data=f"dashboard_portfolio_{user_context.user.user_id}",
+                                ),
+                                InlineKeyboardButton(
+                                    "📊 History",
+                                    callback_data=f"dashboard_history_{user_context.user.user_id}",
+                                ),
+                            ],
+                            [
+                                InlineKeyboardButton(
+                                    "🏦 Switch Exchange",
+                                    callback_data=f"settings_exchange_{user_context.user.user_id}",
+                                ),
+                                InlineKeyboardButton(
+                                    "⚙️ Settings",
+                                    callback_data=f"settings_back_{user_context.user.user_id}",
+                                ),
+                            ],
+                        ]
+                        reply_markup = InlineKeyboardMarkup(keyboard)
+
                         await query.edit_message_text(
-                            "⚠️ **Service Initializing**\n\n"
-                            "The dashboard service is starting up. Please try again shortly.",
+                            dashboard_text,
+                            reply_markup=reply_markup,
                             parse_mode="Markdown",
                         )
-                        return
-
-                    # Get updated user performance with error handling
-                    try:
-                        performance = await user_service.get_user_performance(
-                            user_context.user.user_id
+                    else:
+                        await query.edit_message_text(
+                            f"❌ Failed to refresh {selected_exchange} data.\n\n"
+                            "Please check your API configuration.",
+                            parse_mode="Markdown",
                         )
-                    except AttributeError:
-                        # Service not ready, use defaults
-                        performance = {
-                            "total_pnl": 0.0,
-                            "daily_pnl": 0.0,
-                            "total_trades": 0,
-                            "win_rate": 0.0,
-                        }
 
-                    total_pnl = performance.get("total_pnl", 0.0)
-                    daily_pnl = performance.get("daily_pnl", 0.0)
-                    active_trades = (
-                        len(user_context.active_trades)
-                        if user_context.active_trades
-                        else 0
-                    )
-
-                    await query.edit_message_text(
-                        f"**Dashboard Refreshed**\n\n"
-                        f"Total P&L: ${total_pnl:,.2f}\n"
-                        f"Today: ${daily_pnl:,.2f}\n"
-                        f"Active Trades: {active_trades}\n"
-                        f"Strategy: {user_context.settings.get('trading_strategy', 'N/A')}\n\n"
-                        f"_Updated: {datetime.now().strftime('%H:%M:%S')}_",
-                        parse_mode="Markdown",
-                    )
-                except Exception as e:
-                    logger.error(f"Error refreshing dashboard: {e}")
+                except Exception as refresh_error:
+                    logger.error(f"Error refreshing dashboard: {refresh_error}")
                     await query.edit_message_text(
                         "❌ **Refresh Failed**\n\n"
                         "Unable to refresh dashboard data. Please try again.",
                         parse_mode="Markdown",
                     )
 
-            elif action == "trades":
-                # Show active trades
-                active_trades = user_context.active_trades or []
-                if not active_trades:
-                    await query.edit_message_text(
-                        "📊 **Active Trades**\n\n" "No active trades at the moment.",
-                        parse_mode="Markdown",
-                    )
-                else:
-                    trades_text = "📊 **Active Trades**\n\n"
-                    for i, trade in enumerate(
-                        active_trades[:5], 1
-                    ):  # Show max 5 trades
-                        pnl = trade.current_pnl or 0
-                        pnl_emoji = "🟢" if pnl >= 0 else "🔴"
-                        trades_text += (
-                            f"{i}. {trade.symbol} {trade.side.upper()}\n"
-                            f"   {pnl_emoji} P&L: ${pnl:,.2f}\n\n"
-                        )
+            elif action == "positions":
+                # Show open positions
+                selected_exchange = user_context.settings.get("exchange", "MEXC")
 
-                    if len(active_trades) > 5:
-                        trades_text += (
-                            f"_... and {len(active_trades) - 5} more trades_\n"
-                        )
-
-                    await query.edit_message_text(
-                        trades_text,
-                        parse_mode="Markdown",
-                    )
-
-        except Exception as e:
-            logger.error(f"Error in dashboard callback: {e}")
-            await query.answer("Error processing request")
-
-    async def _handle_emergency_callback(
-        self, query, action: str, user_context: UserContext
-    ):
-        """Handle emergency callback actions"""
-        try:
-            if action == "stop":
-                # Stop all trading for this user
-                await user_service.update_user_settings(
-                    user_context.user.user_id, trading_enabled=False
-                )
-                await query.edit_message_text(
-                    "**EMERGENCY STOP ACTIVATED**\n\n"
-                    "All trading has been stopped for your account.\n"
-                    "Existing positions remain open.\n\n"
-                    "Use /settings to re-enable trading.",
-                    parse_mode="Markdown",
-                )
-            elif action == "disable":
-                await query.edit_message_text(
-                    "**BOT DISABLED**\n\n"
-                    "Your bot has been disabled.\n"
-                    "Contact support to re-enable.\n\n"
-                    "Use /support for assistance.",
-                    parse_mode="Markdown",
-                )
-            elif action == "close":
-                await query.edit_message_text(
-                    "**CLOSING POSITIONS**\n\n"
-                    "All open positions are being closed.\n"
-                    "This may take a few moments.\n\n"
-                    "Check /dashboard for updates.",
-                    parse_mode="Markdown",
-                )
-            elif action == "cancel":
-                await query.edit_message_text(
-                    "Emergency action cancelled.\n" "Your trading continues normally."
-                )
-            else:
-                await query.edit_message_text("Emergency action not implemented yet.")
-        except Exception as e:
-            logger.error(f"Error in emergency callback: {e}")
-            await query.edit_message_text("An error occurred. Please try again.")
-
-    async def _handle_support_callback(
-        self, query, action: str, user_context: UserContext
-    ):
-        """Handle support callback actions"""
-        try:
-            if action == "faq":
-                await query.edit_message_text(
-                    "**Frequently Asked Questions**\n\n"
-                    "Q: How do I start trading?\n"
-                    "A: Use /start and configure your settings.\n\n"
-                    "Q: How do I stop trading?\n"
-                    "A: Use /emergency for immediate stop.\n\n"
-                    "Q: How do I change risk settings?\n"
-                    "A: Use /settings > Risk Management.\n\n"
-                    "Need more help? Use /support.",
-                    parse_mode="Markdown",
-                )
-            elif action == "chat":
-                await query.edit_message_text(
-                    "**Live Chat Support**\n\n"
-                    "Premium and Enterprise users have access to 24/7 live chat.\n\n"
-                    "Your subscription: "
-                    + user_context.user.subscription_tier.title()
-                    + "\n\n"
-                    "For immediate help, email: support@tradingbot.com",
-                    parse_mode="Markdown",
-                )
-            elif action == "email":
-                await query.edit_message_text(
-                    "**Email Support**\n\n"
-                    "Send your questions to:\n"
-                    "support@tradingbot.com\n\n"
-                    "Include your User ID: " + str(user_context.user.user_id) + "\n\n"
-                    "Response time: 24-48 hours",
-                    parse_mode="Markdown",
-                )
-            else:
-                await query.edit_message_text("Support action not implemented yet.")
-        except Exception as e:
-            logger.error(f"Error in support callback: {e}")
-            await query.edit_message_text("An error occurred. Please try again.")
-
-    async def _handle_performance_callback(
-        self, query, action: str, user_context: UserContext
-    ):
-        """Handle performance callback actions"""
-        try:
-            if action == "detailed":
                 try:
-                    # Check if user_service has the required method
-                    if not hasattr(user_service, "get_user_performance"):
-                        await query.edit_message_text(
-                            "⚠️ **Service Initializing**\n\n"
-                            "The performance service is starting up. Please try again shortly.",
-                            parse_mode="Markdown",
-                        )
-                        return
-
-                    try:
-                        performance = await user_service.get_user_performance(
-                            user_context.user.user_id
-                        )
-                    except AttributeError:
-                        # Service not ready, use defaults
-                        performance = {
-                            "total_pnl": 0.0,
-                            "total_trades": 0,
-                            "winning_trades": 0,
-                            "losing_trades": 0,
-                            "win_rate": 0.0,
-                            "best_trade": 0.0,
-                            "worst_trade": 0.0,
-                            "avg_trade_size": 0.0,
-                        }
-
-                    total_pnl = performance.get("total_pnl", 0.0)
-                    total_trades = performance.get("total_trades", 0)
-                    winning_trades = performance.get("winning_trades", 0)
-                    losing_trades = performance.get("losing_trades", 0)
-                    win_rate = performance.get("win_rate", 0.0) * 100
-                    best_trade = performance.get("best_trade", 0.0)
-                    worst_trade = performance.get("worst_trade", 0.0)
-                    avg_trade = performance.get("avg_trade_size", 0.0)
-
-                    await query.edit_message_text(
-                        f"📊 **Detailed Performance Report**\n\n"
-                        f"💰 **P&L Summary:**\n"
-                        f"• Total P&L: ${total_pnl:,.2f}\n"
-                        f"• Best Trade: ${best_trade:,.2f}\n"
-                        f"• Worst Trade: ${worst_trade:,.2f}\n"
-                        f"• Avg Trade: ${avg_trade:,.2f}\n\n"
-                        f"📈 **Trade Statistics:**\n"
-                        f"• Total Trades: {total_trades}\n"
-                        f"• Winning Trades: {winning_trades}\n"
-                        f"• Losing Trades: {losing_trades}\n"
-                        f"• Win Rate: {win_rate:.1f}%\n\n"
-                        f"_Report generated: {datetime.now().strftime('%H:%M:%S')}_",
-                        parse_mode="Markdown",
-                    )
-                except Exception as e:
-                    logger.error(f"Error getting detailed performance: {e}")
-                    await query.edit_message_text(
-                        "❌ **Error**\n\n"
-                        "Unable to generate detailed report. Please try again.",
-                        parse_mode="Markdown",
+                    account_data = await self._get_exchange_account_data(
+                        user_context.user.user_id, selected_exchange
                     )
 
-            elif action == "refresh":
-                # Refresh current performance view
-                await self._handle_performance_callback(query, "detailed", user_context)
+                    positions_text = f"""📈 **OPEN POSITIONS** ({selected_exchange})
 
-        except Exception as e:
-            logger.error(f"Error in performance callback: {e}")
-            await query.answer("Error processing request")
+"""
 
-    async def _handle_upgrade_callback(
-        self, query, action: str, user_context: UserContext
-    ):
-        """Handle upgrade callback actions"""
-        try:
-            if action == "premium":
-                await query.edit_message_text(
-                    "**Upgrade to Premium**\n\n"
-                    "Premium Features:\n"
-                    "- 25 daily trades\n"
-                    "- 5 concurrent positions\n"
-                    "- Advanced strategies\n"
-                    "- Priority support\n\n"
-                    "Price: $29.99/month\n\n"
-                    "Contact: billing@tradingbot.com",
-                    parse_mode="Markdown",
-                )
-            elif action == "enterprise":
-                await query.edit_message_text(
-                    "**Upgrade to Enterprise**\n\n"
-                    "Enterprise Features:\n"
-                    "- Unlimited trades\n"
-                    "- 20 concurrent positions\n"
-                    "- Custom strategies\n"
-                    "- Dedicated support\n"
-                    "- API access\n\n"
-                    "Price: $99.99/month\n\n"
-                    "Contact: enterprise@tradingbot.com",
-                    parse_mode="Markdown",
-                )
-            else:
-                await query.edit_message_text("Upgrade option not implemented yet.")
-        except Exception as e:
-            logger.error(f"Error in upgrade callback: {e}")
-            await query.edit_message_text("An error occurred. Please try again.")
+                    open_orders = account_data.get("open_orders", 0)
+                    if open_orders == 0:
+                        positions_text += "📊 No open positions at the moment.\n\n"
+                        positions_text += "Start trading to see your positions here."
+                    else:
+                        positions_text += f"📊 **{open_orders} Active Orders**\n\n"
+                        positions_text += "Use your exchange platform to view detailed position information."
 
-    async def _handle_billing_callback(
-        self, query, action: str, user_context: UserContext
-    ):
-        """Handle billing callback actions"""
-        try:
-            if action == "info":
-                await query.edit_message_text(
-                    f"**Billing Information**\n\n"
-                    f"Current Plan: {user_context.user.subscription_tier.title()}\n"
-                    f"User ID: {user_context.user.user_id}\n"
-                    f"Member Since: {user_context.user.created_at.strftime('%B %Y')}\n\n"
-                    f"For billing questions:\n"
-                    f"billing@tradingbot.com",
-                    parse_mode="Markdown",
-                )
-            else:
-                await query.edit_message_text("Billing action not implemented yet.")
-        except Exception as e:
-            logger.error(f"Error in billing callback: {e}")
-            await query.edit_message_text("An error occurred. Please try again.")
-
-    async def _handle_strategy_callback(
-        self, query, action: str, user_context: UserContext
-    ):
-        """Handle strategy selection callback"""
-        try:
-            if action == "select":
-                # Parse the strategy selection from callback data
-                # Callback format: strategy_select_STRATEGY_NAME_user_id
-                data_parts = query.data.split("_")
-                if len(data_parts) >= 4:
-                    strategy_name = data_parts[
-                        2
-                    ]  # Extract strategy name from position 2
-
-                    # Update user's strategy setting
-                    await user_service.update_user_settings(
-                        user_context.user.user_id, trading_strategy=strategy_name
-                    )
-
-                    # Update user context
-                    user_context.settings["trading_strategy"] = strategy_name
-
-                    # Notify trading orchestrator of strategy change
-                    from services.trading_orchestrator import trading_orchestrator
-
-                    await trading_orchestrator.update_user_settings(
-                        user_context.user.user_id
-                    )
-
-                    # Import strategy factory for description
-                    from services.trading_orchestrator import StrategyFactory
-
-                    strategies = StrategyFactory.get_available_strategies()
-                    description = strategies.get(strategy_name, "Unknown strategy")
-
-                    success_message = f"**Strategy Updated Successfully!**\n\n"
-                    success_message += f"**New Strategy:** {strategy_name}\n"
-                    success_message += f"**Description:** {description}\n\n"
-                    success_message += (
-                        "Your new strategy will be used for all future signals.\n\n"
-                    )
-                    success_message += (
-                        "**Note:** This change takes effect immediately for new trades."
-                    )
-
-                    # Create back to settings button
                     keyboard = [
                         [
                             InlineKeyboardButton(
-                                "← Back to Settings",
-                                callback_data=f"settings_back_{user_context.user.user_id}",
+                                "← Back to Dashboard",
+                                callback_data=f"dashboard_refresh_{user_context.user.user_id}",
                             )
                         ]
                     ]
                     reply_markup = InlineKeyboardMarkup(keyboard)
 
                     await query.edit_message_text(
-                        success_message,
-                        reply_markup=reply_markup,
-                        parse_mode="Markdown",
+                        positions_text, reply_markup=reply_markup, parse_mode="Markdown"
                     )
-                else:
-                    await query.edit_message_text("Invalid strategy selection.")
-            else:
-                await query.edit_message_text("Strategy action not implemented yet.")
-        except Exception as e:
-            logger.error(f"Error in strategy callback: {e}")
-            await query.edit_message_text(
-                "An error occurred while updating strategy. Please try again."
-            )
 
-    async def _handle_exchange_callback(
-        self, query, action: str, user_context: UserContext
-    ):
-        """Handle exchange selection callback"""
-        try:
-            if action == "select":
-                # Get available exchanges
-                exchanges = ExchangeFactory.get_available_exchanges()
-                current_exchange = user_context.settings.get("exchange", "MEXC")
-
-                # Create exchange selection keyboard
-                keyboard = []
-                for exchange_name, description in exchanges.items():
-                    # Add checkmark if current exchange
-                    display_name = (
-                        f"[*] {exchange_name}"
-                        if exchange_name == current_exchange
-                        else exchange_name
+                except Exception as e:
+                    logger.error(f"Error loading positions: {e}")
+                    await query.edit_message_text(
+                        "❌ Error loading positions data.", parse_mode="Markdown"
                     )
-                    keyboard.append(
+
+            elif action == "portfolio":
+                # Show portfolio breakdown
+                selected_exchange = user_context.settings.get("exchange", "MEXC")
+
+                try:
+                    account_data = await self._get_exchange_account_data(
+                        user_context.user.user_id, selected_exchange
+                    )
+
+                    balances = account_data.get("balances", [])
+                    total_balance = account_data.get("total_balance_usdt", 0)
+
+                    portfolio_text = f"""💼 **PORTFOLIO DETAILS** ({selected_exchange})
+
+💰 **Total Portfolio Value:** ${total_balance:,.2f} USDT
+
+📊 **Asset Breakdown:**
+"""
+
+                    if balances:
+                        sorted_balances = sorted(
+                            balances, key=lambda x: x["total"], reverse=True
+                        )
+                        for i, balance in enumerate(
+                            sorted_balances[:10], 1
+                        ):  # Show top 10
+                            asset = balance["asset"]
+                            total = balance["total"]
+                            free = balance["free"]
+                            locked = balance["locked"]
+
+                            # Calculate percentage of total portfolio
+                            if total_balance > 0:
+                                percentage = (
+                                    (total / total_balance * 100)
+                                    if asset in ["USDT", "USDC", "BUSD"]
+                                    else 0
+                                )
+                            else:
+                                percentage = 0
+
+                            portfolio_text += f"""
+{i}. **{asset}**: {total:,.6f}
+   💰 Value: {percentage:.1f}% of portfolio
+   🟢 Available: {free:,.6f}
+   🔒 Locked: {locked:,.6f}"""
+
+                        if len(balances) > 10:
+                            portfolio_text += (
+                                f"\n\n... and {len(balances) - 10} more assets"
+                            )
+                    else:
+                        portfolio_text += "\n📊 No assets found in portfolio."
+
+                    keyboard = [
                         [
                             InlineKeyboardButton(
-                                display_name,
-                                callback_data=f"exchange_select_{exchange_name}_{user_context.user.user_id}",
+                                "← Back to Dashboard",
+                                callback_data=f"dashboard_refresh_{user_context.user.user_id}",
                             )
                         ]
+                    ]
+                    reply_markup = InlineKeyboardMarkup(keyboard)
+
+                    await query.edit_message_text(
+                        portfolio_text, reply_markup=reply_markup, parse_mode="Markdown"
                     )
 
-                # Add back button
-                keyboard.append(
-                    [
-                        InlineKeyboardButton(
-                            "← Back to Settings",
-                            callback_data=f"settings_back_{user_context.user.user_id}",
-                        )
+                except Exception as e:
+                    logger.error(f"Error loading portfolio: {e}")
+                    await query.edit_message_text(
+                        "❌ Error loading portfolio data.", parse_mode="Markdown"
+                    )
+
+            elif action == "history":
+                # Show trading history from database
+                try:
+                    performance = await user_service.get_user_performance(
+                        user_context.user.user_id, days=7
+                    )
+
+                    history_text = f"""📊 **TRADING HISTORY** (Last 7 Days)
+
+📈 **Performance Summary:**
+• Total P&L: ${performance.get('total_pnl', 0):.2f}
+• Total Trades: {performance.get('total_trades', 0)}
+• Win Rate: {performance.get('win_rate', 0):.1f}%
+• Best Trade: ${performance.get('best_trade', 0):.2f}
+• Worst Trade: ${performance.get('worst_trade', 0):.2f}
+
+📊 **Recent Activity:**
+• Daily P&L: ${performance.get('daily_pnl', 0):.2f}
+• Weekly P&L: ${performance.get('weekly_pnl', 0):.2f}
+• Monthly P&L: ${performance.get('monthly_pnl', 0):.2f}
+
+📈 **Statistics:**
+• Avg Trade Size: ${performance.get('avg_trade_size', 0):.2f}
+• Winning Trades: {performance.get('winning_trades', 0)}
+• Losing Trades: {performance.get('losing_trades', 0)}"""
+
+                    keyboard = [
+                        [
+                            InlineKeyboardButton(
+                                "← Back to Dashboard",
+                                callback_data=f"dashboard_refresh_{user_context.user.user_id}",
+                            )
+                        ]
                     ]
-                )
+                    reply_markup = InlineKeyboardMarkup(keyboard)
 
-                reply_markup = InlineKeyboardMarkup(keyboard)
+                    await query.edit_message_text(
+                        history_text, reply_markup=reply_markup, parse_mode="Markdown"
+                    )
 
-                exchange_text = "**Exchange Selection**\n\n"
-                exchange_text += f"**Current Exchange:** {current_exchange}\n\n"
-                exchange_text += "**Available Exchanges:**\n"
+                except Exception as e:
+                    logger.error(f"Error loading history: {e}")
+                    await query.edit_message_text(
+                        "❌ Error loading trading history.", parse_mode="Markdown"
+                    )
 
-                for exchange_name, description in exchanges.items():
-                    icon = "◉" if exchange_name == current_exchange else "○"
-                    exchange_text += f"{icon} **{exchange_name}**\n"
-                    exchange_text += f"   {description}\n\n"
-
-                exchange_text += "Select an exchange to change your trading platform."
-
-                await query.edit_message_text(
-                    exchange_text, reply_markup=reply_markup, parse_mode="Markdown"
-                )
-            else:
-                await query.edit_message_text("Exchange action not implemented yet.")
         except Exception as e:
-            logger.error(f"Error in exchange callback: {e}")
-            await query.edit_message_text(
-                "An error occurred while updating exchange. Please try again."
-            )
+            logger.error(f"Error in dashboard callback: {e}")
+            await query.answer("Error processing request")
 
     async def _show_main_settings_menu(self, query, user_context: UserContext):
         """Show the main settings menu"""
         try:
-            # Create settings menu keyboard
+            # Get current settings
+            current_exchange = user_context.settings.get("exchange", "MEXC")
+            current_strategy = user_context.settings.get("strategy", "RSI_EMA")
+
+            # Create main settings menu
             keyboard = [
                 [
                     InlineKeyboardButton(
-                        "Strategy",
-                        callback_data=f"settings_strategy_{user_context.user.user_id}",
+                        f"🏦 Exchange: {current_exchange}",
+                        callback_data=f"settings_exchange_{user_context.user.user_id}",
                     ),
                     InlineKeyboardButton(
-                        "Exchange",
-                        callback_data=f"settings_exchange_{user_context.user.user_id}",
+                        "🔧 Strategy",
+                        callback_data=f"settings_strategy_{user_context.user.user_id}",
                     ),
                 ],
                 [
                     InlineKeyboardButton(
-                        "Risk Mgmt",
+                        "💰 Risk Mgmt",
                         callback_data=f"settings_risk_{user_context.user.user_id}",
                     ),
                     InlineKeyboardButton(
-                        "Notifications",
+                        "📱 Notifications",
                         callback_data=f"settings_notifications_{user_context.user.user_id}",
                     ),
                 ],
                 [
                     InlineKeyboardButton(
-                        "Emergency",
+                        "🚨 Emergency",
                         callback_data=f"settings_emergency_{user_context.user.user_id}",
                     ),
                     InlineKeyboardButton(
-                        "View All",
+                        "📊 View All",
                         callback_data=f"settings_view_{user_context.user.user_id}",
                     ),
                 ],
                 [
                     InlineKeyboardButton(
-                        "Reset",
+                        "🔄 Reset",
                         callback_data=f"settings_reset_{user_context.user.user_id}",
+                    ),
+                    InlineKeyboardButton(
+                        "❌ Close",
+                        callback_data=f"settings_close_{user_context.user.user_id}",
                     ),
                 ],
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
 
-            # Get current settings for display
-            current_strategy = user_context.settings.get("trading_strategy", "RSI_EMA")
-            current_exchange = user_context.settings.get("exchange", "MEXC")
+            settings_text = f"""⚙️ **TRADING SETTINGS**
+        
+👤 **User:** {user_context.user.first_name or user_context.user.username}
+🎯 **Plan:** {user_context.user.subscription_tier.title()}
 
-            settings_text = f"""**Settings Configuration**
+**Current Configuration:**
+🏦 **Exchange:** {current_exchange}
+🔧 **Strategy:** {current_strategy}
+⚡ **Status:** {'🟢 Active' if user_context.settings.get('trading_enabled', True) else '🔴 Paused'}
 
-**Current Settings:**
-• Strategy: {current_strategy}
-• Exchange: {current_exchange} 
-• Trading: {'Enabled' if user_context.settings.get('trading_enabled', True) else 'Disabled'}
-• Risk Level: {user_context.settings.get('risk_level', 'Medium')}
-
-**Configuration Options:**
-• **Strategy** - Change signal detection method
-• **Exchange** - Select trading exchange (MEXC/Bybit)
-• **Risk Mgmt** - Configure risk management rules
-• **Notifications** - Set alert preferences
-• **Emergency** - Quick safety controls
-
-Select an option to configure:"""
+**Configure your trading preferences:**"""
 
             await query.edit_message_text(
-                settings_text, reply_markup=reply_markup, parse_mode="Markdown"
+                settings_text, parse_mode="Markdown", reply_markup=reply_markup
             )
+
         except Exception as e:
             logger.error(f"Error showing main settings menu: {e}")
-            await query.edit_message_text(
-                "Error loading settings menu. Please try /settings command."
-            )
+            await query.edit_message_text("❌ Error loading settings menu.")
 
     # Notification System
     async def _notification_worker(self, worker_name: str):

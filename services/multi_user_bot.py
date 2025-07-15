@@ -96,7 +96,7 @@ class MultiUserTradingBot:
         self._network_retry_count = 0  # New attribute for network retry count
 
     async def initialize(self):
-        """Initialize the multi-user bot system"""
+        """Initialize the multi-user trading bot system"""
         logger.info("Initializing multi-user trading bot...")
 
         # Set running flag
@@ -179,7 +179,9 @@ class MultiUserTradingBot:
                 if settings:
                     try:
                         settings_dict = {
-                            "strategy": getattr(settings, "strategy", "RSI_EMA"),
+                            "strategy": getattr(
+                                settings, "strategy", "ENHANCED_RSI_EMA"
+                            ),
                             "exchange": getattr(settings, "exchange", "MEXC"),
                             "risk_management": getattr(settings, "risk_management", {}),
                             "notifications": getattr(settings, "notifications", {}),
@@ -190,7 +192,7 @@ class MultiUserTradingBot:
                             f"Error converting settings to dict for user {user.user_id}: {e}"
                         )
                         settings_dict = {
-                            "strategy": "RSI_EMA",
+                            "strategy": "ENHANCED_RSI_EMA",
                             "exchange": "MEXC",
                             "risk_management": {},
                             "notifications": {},
@@ -278,7 +280,7 @@ class MultiUserTradingBot:
         welcome_message = f"""🤖 **Welcome to Professional Trading Bot**
 
 👤 **Your Account:**
-• Subscription: {user_context.user.subscription_tier.title()}
+• Subscription: {self._escape_markdown(user_context.user.subscription_tier.title())}
 • Daily Trades: {limits.daily_trades}
 • Max Positions: {limits.concurrent_positions}
 • Member Since: {user_context.user.created_at.strftime('%B %Y')}
@@ -408,7 +410,7 @@ Need more help? Use `/support` to reach our team! 🎯"""
 • Response Time: {stats.get('avg_response_time', 0):.2f}s
 
 💼 **Your Status:**
-• Subscription: {user_context.user.subscription_tier.title()}
+• Subscription: {self._escape_markdown(user_context.user.subscription_tier.title())}
 • Trading: {"🟢 Active" if user_context.settings.get('trading_enabled', True) else "🔴 Disabled"}
 • Last Activity: {user_context.last_interaction.strftime('%H:%M:%S')}
 
@@ -557,7 +559,7 @@ Need more help? Use `/support` to reach our team! 🎯"""
 
         support_message = f"""🛠 **Customer Support**
 
-👤 **Your Account:** {user_context.user.subscription_tier.title()} Subscriber
+👤 **Your Account:** {self._escape_markdown(user_context.user.subscription_tier.title())} Subscriber
 🆔 **User ID:** {user_context.user.user_id}
 
 🤝 **How can we help you today?**
@@ -622,9 +624,9 @@ Type `/help` for a complete list of commands! 🤖"""
             )
             return
 
-        # Get current settings
+        # Get current settings with safe fallbacks
         current_exchange = user_context.settings.get("exchange", "MEXC")
-        current_strategy = user_context.settings.get("strategy", "RSI_EMA")
+        current_strategy = self._get_user_strategy_safely(user_context)
 
         # Create personalized settings menu
         keyboard = [
@@ -669,22 +671,29 @@ Type `/help` for a complete list of commands! 🤖"""
                 ),
             ],
         ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        # Safely format user name and other dynamic content
+        user_name = self._escape_markdown(
+            user_context.user.first_name or user_context.user.username
+        )
+        plan_name = self._escape_markdown(user_context.user.subscription_tier.title())
+        exchange_name = self._escape_markdown(current_exchange)
+        strategy_name = self._escape_markdown(current_strategy)
 
         settings_text = f"""⚙️ **TRADING SETTINGS**
         
-👤 **User:** {user_context.user.first_name or user_context.user.username}
-🎯 **Plan:** {user_context.user.subscription_tier.title()}
+👤 **User:** {user_name}
+🎯 **Plan:** {plan_name}
 
 **Current Configuration:**
-🏦 **Exchange:** {current_exchange}
-🔧 **Strategy:** {current_strategy}
+🏦 **Exchange:** {exchange_name}
+🔧 **Strategy:** {strategy_name}
 ⚡ **Status:** {'🟢 Active' if user_context.settings.get('trading_enabled', True) else '🔴 Paused'}
 
 **Configure your trading preferences:**"""
 
-        await update.message.reply_text(
-            settings_text, parse_mode="Markdown", reply_markup=reply_markup
+        await self._send_menu_with_error_handling(
+            update, settings_text, keyboard, "Markdown"
         )
 
     async def _handle_dashboard(
@@ -1175,7 +1184,7 @@ Please try refreshing or contact support if the issue persists."""
 
         subscription_text = f"""💎 **SUBSCRIPTION PLANS**
 
-🆔 **Current Plan: {user_context.user.subscription_tier.title()}**
+🆔 **Current Plan: {self._escape_markdown(user_context.user.subscription_tier.title())}**
 
 📊 **Plan Comparison:**
 
@@ -1369,17 +1378,19 @@ Your trading settings have been updated. Use `/dashboard` to view your {exchange
                         "❌ Failed to update exchange. Please try again."
                     )
         elif action_type == "strategy" and action == "select":
-            # Handle strategy selection
+            # Handle strategy selection with unified key handling
             if len(data_parts) >= 4:
                 strategy_name = data_parts[2]  # strategy_select_RSI_EMA_user_id
                 try:
-                    # Update user strategy in database
+                    # Update user strategy in database with consistent key
                     await user_service.update_user_settings(
                         user_context.user.user_id, strategy=strategy_name
                     )
 
-                    # Update local settings
+                    # Update local settings with all possible strategy keys for consistency
                     user_context.settings["strategy"] = strategy_name
+                    user_context.settings["trading_strategy"] = strategy_name
+                    user_context.settings["current_strategy"] = strategy_name
 
                     # Notify trading orchestrator of the change
                     try:
@@ -1393,12 +1404,28 @@ Your trading settings have been updated. Use `/dashboard` to view your {exchange
                             f"Could not notify trading orchestrator: {orchestrator_error}"
                         )
 
-                    await query.edit_message_text(
-                        f"✅ **Strategy Updated Successfully!**\n\n"
-                        f"**New Strategy:** {strategy_name}\n\n"
-                        f"Your new strategy will be used for all future signals.\n\n"
-                        f"**Note:** This change takes effect immediately for new trades.",
-                        parse_mode="Markdown",
+                    # Format success message with safe escaping
+                    safe_strategy_name = self._escape_markdown(strategy_name)
+                    success_text = f"""✅ **Strategy Updated Successfully!**
+
+**New Strategy:** {safe_strategy_name}
+
+Your new strategy will be used for all future signals.
+
+**Note:** This change takes effect immediately for new trades."""
+
+                    # Create return button
+                    keyboard = [
+                        [
+                            InlineKeyboardButton(
+                                "← Back to Settings",
+                                callback_data=f"settings_back_{user_context.user.user_id}",
+                            )
+                        ]
+                    ]
+
+                    await self._send_menu_with_error_handling(
+                        query, success_text, keyboard, "Markdown"
                     )
 
                 except Exception as e:
@@ -1417,32 +1444,32 @@ Your trading settings have been updated. Use `/dashboard` to view your {exchange
         """Handle settings callback actions"""
         try:
             if action == "exchange":
-                # Exchange selection interface
-                current_exchange = user_context.settings.get("exchange", "MEXC")
+                # Exchange selection interface with error handling
+                try:
+                    current_exchange = user_context.settings.get("exchange", "MEXC")
 
-                keyboard = [
-                    [
-                        InlineKeyboardButton(
-                            f"{'[✓] MEXC' if current_exchange == 'MEXC' else 'MEXC'}",
-                            callback_data=f"exchange_select_MEXC_{user_context.user.user_id}",
-                        ),
-                        InlineKeyboardButton(
-                            f"{'[✓] Bybit' if current_exchange == 'Bybit' else 'Bybit'}",
-                            callback_data=f"exchange_select_Bybit_{user_context.user.user_id}",
-                        ),
-                    ],
-                    [
-                        InlineKeyboardButton(
-                            "← Back to Settings",
-                            callback_data=f"settings_back_{user_context.user.user_id}",
-                        )
-                    ],
-                ]
-                reply_markup = InlineKeyboardMarkup(keyboard)
+                    keyboard = [
+                        [
+                            InlineKeyboardButton(
+                                f"{'[✓] MEXC' if current_exchange == 'MEXC' else 'MEXC'}",
+                                callback_data=f"exchange_select_MEXC_{user_context.user.user_id}",
+                            ),
+                            InlineKeyboardButton(
+                                f"{'[✓] Bybit' if current_exchange == 'Bybit' else 'Bybit'}",
+                                callback_data=f"exchange_select_Bybit_{user_context.user.user_id}",
+                            ),
+                        ],
+                        [
+                            InlineKeyboardButton(
+                                "← Back to Settings",
+                                callback_data=f"settings_back_{user_context.user.user_id}",
+                            )
+                        ],
+                    ]
 
-                exchange_text = f"""🏦 **EXCHANGE SELECTION**
+                    exchange_text = f"""🏦 **EXCHANGE SELECTION**
 
-**Current Exchange:** {current_exchange}
+**Current Exchange:** {self._escape_markdown(current_exchange)}
 
 **Available Exchanges:**
 
@@ -1466,66 +1493,134 @@ Your trading settings have been updated. Use `/dashboard` to view your {exchange
 • Order management
 • Portfolio tracking"""
 
-                await query.edit_message_text(
-                    exchange_text, reply_markup=reply_markup, parse_mode="Markdown"
-                )
-
-            elif action == "strategy":
-                # Import here to avoid circular imports
-                from services.trading_orchestrator import StrategyFactory
-
-                # Get available strategies
-                strategies = StrategyFactory.get_available_strategies()
-                current_strategy = user_context.settings.get(
-                    "trading_strategy", "RSI_EMA"
-                )
-
-                # Create strategy selection keyboard
-                keyboard = []
-                for strategy_name, description in strategies.items():
-                    # Add checkmark if current strategy
-                    display_name = (
-                        f"[✓] {strategy_name}"
-                        if strategy_name == current_strategy
-                        else strategy_name
+                    await self._send_menu_with_error_handling(
+                        query, exchange_text, keyboard, "Markdown"
                     )
+
+                except Exception as exchange_error:
+                    logger.error(f"Error in exchange menu: {exchange_error}")
+                    # Simple fallback menu
+                    fallback_keyboard = [
+                        [
+                            InlineKeyboardButton(
+                                "MEXC",
+                                callback_data=f"exchange_select_MEXC_{user_context.user.user_id}",
+                            ),
+                            InlineKeyboardButton(
+                                "Bybit",
+                                callback_data=f"exchange_select_Bybit_{user_context.user.user_id}",
+                            ),
+                        ],
+                        [
+                            InlineKeyboardButton(
+                                "← Back to Settings",
+                                callback_data=f"settings_back_{user_context.user.user_id}",
+                            )
+                        ],
+                    ]
+
+                    await self._send_menu_with_error_handling(
+                        query,
+                        "🏦 **Exchange Selection**\n\nSelect your exchange:",
+                        fallback_keyboard,
+                    )
+            elif action == "strategy":
+                # Strategy selection with comprehensive error handling
+                try:
+                    # Get available strategies safely
+                    strategies = self._get_available_strategies()
+                    current_strategy = self._get_user_strategy_safely(user_context)
+
+                    # Create strategy selection keyboard
+                    keyboard = []
+                    for strategy_name, description in strategies.items():
+                        # Safely escape strategy name
+                        safe_strategy_name = self._escape_markdown(strategy_name)
+                        safe_description = self._escape_markdown(description)
+
+                        # Add checkmark if current strategy
+                        display_name = (
+                            f"[✓] {safe_strategy_name}"
+                            if strategy_name == current_strategy
+                            else safe_strategy_name
+                        )
+                        keyboard.append(
+                            [
+                                InlineKeyboardButton(
+                                    display_name,
+                                    callback_data=f"strategy_select_{strategy_name}_{user_context.user.user_id}",
+                                )
+                            ]
+                        )
+
+                    # Add back button
                     keyboard.append(
                         [
                             InlineKeyboardButton(
-                                display_name,
-                                callback_data=f"strategy_select_{strategy_name}_{user_context.user.user_id}",
+                                "← Back to Settings",
+                                callback_data=f"settings_back_{user_context.user.user_id}",
                             )
                         ]
                     )
 
-                # Add back button
-                keyboard.append(
-                    [
-                        InlineKeyboardButton(
-                            "← Back to Settings",
-                            callback_data=f"settings_back_{user_context.user.user_id}",
-                        )
+                    # Build strategy text with safe escaping
+                    strategy_text = "**🔧 Strategy Selection**\n\n"
+                    strategy_text += f"**Current Strategy:** {self._escape_markdown(current_strategy)}\n\n"
+                    strategy_text += "**Available Strategies:**\n\n"
+
+                    for strategy_name, description in strategies.items():
+                        icon = "◉" if strategy_name == current_strategy else "○"
+                        safe_name = self._escape_markdown(strategy_name)
+                        safe_desc = self._escape_markdown(description)
+                        strategy_text += f"{icon} **{safe_name}**\n"
+                        strategy_text += f"   {safe_desc}\n\n"
+
+                    strategy_text += (
+                        "Select a strategy to change your signal detection method:"
+                    )
+
+                    # Send menu with error handling
+                    await self._send_menu_with_error_handling(
+                        query, strategy_text, keyboard, "Markdown"
+                    )
+
+                except Exception as strategy_error:
+                    logger.error(f"Error in strategy menu: {strategy_error}")
+                    # Fallback to simple menu
+                    fallback_keyboard = [
+                        [
+                            InlineKeyboardButton(
+                                "[✓] RSI_EMA",
+                                callback_data=f"strategy_select_RSI_EMA_{user_context.user.user_id}",
+                            )
+                        ],
+                        [
+                            InlineKeyboardButton(
+                                "Enhanced RSI_EMA",
+                                callback_data=f"strategy_select_ENHANCED_RSI_EMA_{user_context.user.user_id}",
+                            )
+                        ],
+                        [
+                            InlineKeyboardButton(
+                                "← Back to Settings",
+                                callback_data=f"settings_back_{user_context.user.user_id}",
+                            )
+                        ],
                     ]
-                )
 
-                reply_markup = InlineKeyboardMarkup(keyboard)
+                    fallback_text = """**🔧 Strategy Selection**
 
-                strategy_text = "**🔧 Strategy Selection**\n\n"
-                strategy_text += f"**Current Strategy:** {current_strategy}\n\n"
-                strategy_text += "**Available Strategies:**\n"
+**Current Strategy:** RSI_EMA
 
-                for strategy_name, description in strategies.items():
-                    icon = "◉" if strategy_name == current_strategy else "○"
-                    strategy_text += f"{icon} **{strategy_name}**\n"
-                    strategy_text += f"   {description}\n\n"
+**Available Strategies:**
+◉ **RSI_EMA** - Basic RSI + EMA strategy
+○ **Enhanced RSI_EMA** - Improved signal generation
 
-                strategy_text += (
-                    "Select a strategy to change your signal detection method:"
-                )
+Select a strategy to change your signal detection method:"""
 
-                await query.edit_message_text(
-                    strategy_text, reply_markup=reply_markup, parse_mode="Markdown"
-                )
+                    await self._send_menu_with_error_handling(
+                        query, fallback_text, fallback_keyboard, "Markdown"
+                    )
             elif action == "risk":
                 # Risk management settings
                 risk_settings = user_context.settings.get("risk_management", {})
@@ -1951,11 +2046,11 @@ Stay informed about your trading activity with customizable notifications."""
             await query.answer("Error processing request")
 
     async def _show_main_settings_menu(self, query, user_context: UserContext):
-        """Show the main settings menu"""
+        """Show the main settings menu with unified error handling"""
         try:
-            # Get current settings
+            # Get current settings with safe fallbacks
             current_exchange = user_context.settings.get("exchange", "MEXC")
-            current_strategy = user_context.settings.get("strategy", "RSI_EMA")
+            current_strategy = self._get_user_strategy_safely(user_context)
 
             # Create main settings menu
             keyboard = [
@@ -2000,31 +2095,58 @@ Stay informed about your trading activity with customizable notifications."""
                     ),
                 ],
             ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
 
             # Format status safely to avoid Markdown issues
             trading_enabled = user_context.settings.get("trading_enabled", True)
             status_text = "🟢 Active" if trading_enabled else "🔴 Paused"
 
+            # Safely escape user data for Markdown
+            user_name = self._escape_markdown(
+                user_context.user.first_name or user_context.user.username
+            )
+            plan_name = self._escape_markdown(
+                user_context.user.subscription_tier.title()
+            )
+            exchange_name = self._escape_markdown(current_exchange)
+            strategy_name = self._escape_markdown(current_strategy)
+
             settings_text = f"""⚙️ **TRADING SETTINGS**
 
-👤 **User:** {user_context.user.first_name or user_context.user.username}
-🎯 **Plan:** {user_context.user.subscription_tier.title()}
+👤 **User:** {user_name}
+🎯 **Plan:** {plan_name}
 
 **Current Configuration:**
-🏦 **Exchange:** {current_exchange}
-🔧 **Strategy:** {current_strategy}
+🏦 **Exchange:** {exchange_name}
+🔧 **Strategy:** {strategy_name}
 ⚡ **Status:** {status_text}
 
 **Configure your trading preferences:**"""
 
-            await query.edit_message_text(
-                settings_text, parse_mode="Markdown", reply_markup=reply_markup
+            await self._send_menu_with_error_handling(
+                query, settings_text, keyboard, "Markdown"
             )
 
         except Exception as e:
             logger.error(f"Error showing main settings menu: {e}")
-            await query.edit_message_text("❌ Error loading settings menu.")
+            # Fallback to simple menu
+            simple_keyboard = [
+                [
+                    InlineKeyboardButton(
+                        "🏦 Exchange",
+                        callback_data=f"settings_exchange_{user_context.user.user_id}",
+                    ),
+                    InlineKeyboardButton(
+                        "🔧 Strategy",
+                        callback_data=f"settings_strategy_{user_context.user.user_id}",
+                    ),
+                ],
+            ]
+
+            await self._send_menu_with_error_handling(
+                query,
+                "⚙️ **Settings Menu**\n\nConfigure your trading preferences:",
+                simple_keyboard,
+            )
 
     # Notification System
     async def _notification_worker(self, worker_name: str):
@@ -2309,6 +2431,123 @@ Time: {datetime.now().strftime('%H:%M:%S')}"""
 
         return "\n".join([feature_map.get(f, f"• {f}") for f in features])
 
+    def _escape_markdown(self, text: str) -> str:
+        """Escape special Markdown characters to prevent parsing errors"""
+        if not text:
+            return "N/A"
+
+        # Convert to string and escape only the most problematic characters for Telegram Markdown
+        escaped_text = str(text)
+
+        # Escape characters that commonly cause parsing issues in Telegram Markdown
+        # Focus on characters that can break message formatting
+        escape_map = {
+            "*": "\\*",  # Bold formatting
+            "_": "\\_",  # Italic formatting
+            "`": "\\`",  # Code formatting
+            "[": "\\[",  # Link formatting
+            "]": "\\]",  # Link formatting
+            "\\": "\\\\",  # Backslash must be escaped first
+        }
+
+        # Escape backslashes first to avoid double escaping
+        for char in ["\\", "*", "_", "`", "[", "]"]:
+            if char in escaped_text:
+                escaped_text = escaped_text.replace(char, escape_map[char])
+
+        return escaped_text
+
+    def _get_available_strategies(self) -> Dict[str, str]:
+        """Get available strategies with comprehensive error handling"""
+        try:
+            # Try to import StrategyFactory
+            from services.trading_orchestrator import StrategyFactory
+
+            return StrategyFactory.get_available_strategies()
+        except ImportError as ie:
+            logger.warning(f"Could not import StrategyFactory: {ie}")
+        except Exception as e:
+            logger.error(f"Error getting strategies from StrategyFactory: {e}")
+
+        # Fallback to default strategies if import fails
+        return {
+            "ENHANCED_RSI_EMA": "Enhanced RSI + EMA - Improved version with better signal generation",
+            "RSI_EMA": "RSI + EMA - Combines RSI levels with EMA trend confirmation",
+        }
+
+    def _get_user_strategy_safely(self, user_context: UserContext) -> str:
+        """Safely get user's current strategy with fallback"""
+        # Check multiple possible keys for strategy setting
+        strategy_keys = ["strategy", "trading_strategy", "current_strategy"]
+
+        for key in strategy_keys:
+            strategy = user_context.settings.get(key)
+            if strategy:
+                return strategy
+
+        # Default fallback
+        return "ENHANCED_RSI_EMA"
+
+    async def _send_menu_with_error_handling(
+        self, query_or_update, text: str, keyboard: list, parse_mode: str = "Markdown"
+    ):
+        """Send menu with comprehensive error handling"""
+        try:
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
+            # Determine if this is a query (callback) or update (command)
+            if hasattr(query_or_update, "edit_message_text"):
+                # This is a callback query
+                await query_or_update.edit_message_text(
+                    text, reply_markup=reply_markup, parse_mode=parse_mode
+                )
+            elif hasattr(query_or_update, "message"):
+                # This is an update
+                await query_or_update.message.reply_text(
+                    text, reply_markup=reply_markup, parse_mode=parse_mode
+                )
+            else:
+                logger.error(f"Unknown message type: {type(query_or_update)}")
+
+        except Exception as e:
+            logger.error(f"Error sending menu: {e}")
+
+            # Try to send without Markdown as fallback
+            try:
+                # Remove markdown formatting
+                plain_text = (
+                    text.replace("**", "")
+                    .replace("*", "")
+                    .replace("_", "")
+                    .replace("`", "")
+                )
+
+                if hasattr(query_or_update, "edit_message_text"):
+                    await query_or_update.edit_message_text(
+                        f"⚠️ Menu Display Issue\n\n{plain_text}",
+                        reply_markup=InlineKeyboardMarkup(keyboard),
+                    )
+                elif hasattr(query_or_update, "message"):
+                    await query_or_update.message.reply_text(
+                        f"⚠️ Menu Display Issue\n\n{plain_text}",
+                        reply_markup=InlineKeyboardMarkup(keyboard),
+                    )
+            except Exception as fallback_error:
+                logger.error(f"Fallback menu send also failed: {fallback_error}")
+
+                # Last resort - send error message only
+                try:
+                    if hasattr(query_or_update, "edit_message_text"):
+                        await query_or_update.edit_message_text(
+                            "❌ Menu temporarily unavailable. Please try again."
+                        )
+                    elif hasattr(query_or_update, "message"):
+                        await query_or_update.message.reply_text(
+                            "❌ Menu temporarily unavailable. Please try again."
+                        )
+                except Exception as final_error:
+                    logger.error(f"Final error message send failed: {final_error}")
+
     async def _increment_stat(self, stat_name: str):
         """Thread-safe stat increment"""
         self.stats[stat_name] = self.stats.get(stat_name, 0) + 1
@@ -2566,8 +2805,7 @@ Time: {datetime.now().strftime('%H:%M:%S')}"""
                     try:
                         await update.effective_chat.send_message(
                             "⚠️ Sorry, I couldn't process that request. "
-                            "Please try again with a different command.",
-                            timeout=10,
+                            "Please try again with a different command."
                         )
                     except Exception as send_error:
                         logger.error(f"Failed to send error response: {send_error}")
@@ -2590,11 +2828,10 @@ Time: {datetime.now().strftime('%H:%M:%S')}"""
                 if isinstance(update, Update) and update.effective_chat:
                     try:
                         await update.effective_chat.send_message(
-                            "⏳ **System Initializing**\\n\\n"
+                            "⏳ **System Initializing**\n\n"
                             "Some services are still starting up. "
                             "Please try again in a few moments.",
                             parse_mode="Markdown",
-                            timeout=10,
                         )
                     except Exception as send_error:
                         logger.error(
@@ -2611,11 +2848,10 @@ Time: {datetime.now().strftime('%H:%M:%S')}"""
                 if isinstance(update, Update) and update.effective_chat:
                     try:
                         await update.effective_chat.send_message(
-                            "❌ **Temporary Error**\\n\\n"
+                            "❌ **Temporary Error**\n\n"
                             "I encountered an unexpected error. "
                             "Please try again in a moment.",
                             parse_mode="Markdown",
-                            timeout=10,
                         )
                     except Exception as send_error:
                         logger.error(

@@ -203,7 +203,7 @@ class MultiUserDatabase:
             """
             CREATE TABLE IF NOT EXISTS user_settings (
                 user_id INTEGER PRIMARY KEY,
-                strategy TEXT DEFAULT 'RSI_EMA',
+                strategy TEXT DEFAULT 'ENHANCED_RSI_EMA',
                 exchange TEXT DEFAULT 'MEXC',
                 risk_management TEXT DEFAULT '{}',
                 notifications TEXT DEFAULT '{}',
@@ -503,100 +503,74 @@ class MultiUserDatabase:
     async def get_user_settings(self, user_id: int) -> Optional[UserSettings]:
         """Get user settings with safe JSON parsing"""
         async with self.get_connection() as db:
-            cursor = await db.execute(
-                """
-                SELECT user_id, strategy, exchange, risk_management, notifications, emergency, last_updated 
-                FROM user_settings WHERE user_id = ?
-            """,
-                (user_id,),
-            )
-
-            row = await cursor.fetchone()
-            if row:
-                # Default values for settings in case of JSON parsing errors
-                default_risk_management = {
-                    "max_risk_per_trade": 0.02,
-                    "stop_loss_atr": 2.0,
-                    "take_profit_atr": 3.0,
-                    "max_open_positions": 5,
-                    "emergency_stop": False,
-                    "trading_enabled": True,
-                }
-
-                default_notifications = {
-                    "signal_alerts": True,
-                    "trade_execution": True,
-                    "risk_warnings": True,
-                }
-
-                default_emergency = {
-                    "emergency_mode": False,
-                    "auto_close_on_loss": False,
-                    "max_daily_loss": 0.05,
-                }
-
-                try:
-                    return UserSettings(
-                        user_id=row[0],
-                        strategy=row[1] or "RSI_EMA",
-                        exchange=row[2] or "MEXC",
-                        risk_management=self._safe_json_loads(
-                            row[3], default_risk_management
-                        ),
-                        notifications=self._safe_json_loads(
-                            row[4], default_notifications
-                        ),
-                        emergency=self._safe_json_loads(row[5], default_emergency),
-                        last_updated=(
-                            datetime.fromisoformat(row[6]) if row[6] else datetime.now()
-                        ),
-                    )
-                except Exception as e:
-                    logger.error(
-                        f"Error creating UserSettings object for user {user_id}: {e}"
-                    )
-                    # Return settings with all defaults if object creation fails
+            try:
+                row = await db.execute_fetchone(
+                    "SELECT strategy, exchange, risk_management, notifications, emergency FROM user_settings WHERE user_id = ?",
+                    (user_id,),
+                )
+                if row:
                     return UserSettings(
                         user_id=user_id,
-                        strategy="RSI_EMA",
-                        exchange="MEXC",
-                        risk_management=default_risk_management,
-                        notifications=default_notifications,
-                        emergency=default_emergency,
-                        last_updated=datetime.now(),
+                        strategy=row[1] or "ENHANCED_RSI_EMA",
+                        exchange=row[2] or "MEXC",
+                        risk_management=self._safe_json_loads(
+                            row[3], "risk_management", user_id
+                        ),
+                        notifications=self._safe_json_loads(
+                            row[4], "notifications", user_id
+                        ),
+                        emergency=self._safe_json_loads(row[5], "emergency", user_id),
                     )
-            return None
-
-    async def update_user_settings(self, user_id: int, **kwargs):
-        """Update user settings with safe JSON handling"""
-        async with self.get_connection() as db:
-            try:
-                settings = await self.get_user_settings(user_id)
-                if not settings:
+                else:
+                    # Create default settings for user
                     await self._create_default_settings(db, user_id)
-                    settings = await self.get_user_settings(user_id)
+                    return UserSettings(
+                        user_id=user_id,
+                        strategy="ENHANCED_RSI_EMA",
+                        exchange="MEXC",
+                        risk_management={},
+                        notifications={},
+                        emergency={},
+                    )
+            except Exception as e:
+                logger.error(f"Error getting user settings for {user_id}: {e}")
+                return None
 
-                updates = []
+    async def update_user_settings(self, user_id: int, **settings) -> bool:
+        """Update user's trading settings with comprehensive validation"""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                # Prepare update query components
+                update_fields = []
                 params = []
 
-                if "strategy" in kwargs:
-                    strategy = kwargs["strategy"]
-                    # Validate strategy is a string
-                    if isinstance(strategy, str) and strategy.strip():
-                        updates.append("strategy = ?")
-                        params.append(strategy.strip())
+                # Handle strategy update with validation
+                if "strategy" in settings:
+                    valid_strategies = [
+                        "ENHANCED_RSI_EMA",
+                        "RSI_EMA",
+                        "MACD",
+                        "BOLLINGER",
+                        "FOREX",
+                    ]
+                    if settings["strategy"] in valid_strategies:
+                        update_fields.append("strategy = ?")
+                        params.append(settings["strategy"])
+                    else:
+                        logger.warning(
+                            f"Invalid strategy {settings['strategy']} for user {user_id}"
+                        )
 
-                if "exchange" in kwargs:
-                    exchange = kwargs["exchange"]
-                    # Validate exchange is a string
+                if "exchange" in settings:
+                    exchange = settings["exchange"]
                     if isinstance(exchange, str) and exchange.strip():
-                        updates.append("exchange = ?")
+                        update_fields.append("exchange = ?")
                         params.append(exchange.strip())
 
-                if "risk_management" in kwargs:
-                    risk_data = kwargs["risk_management"]
+                if "risk_management" in settings:
+                    risk_data = settings["risk_management"]
                     if isinstance(risk_data, dict):
-                        updates.append("risk_management = ?")
+                        update_fields.append("risk_management = ?")
                         params.append(
                             self._safe_json_dumps(risk_data, "risk_management")
                         )
@@ -605,10 +579,10 @@ class MultiUserDatabase:
                             f"Invalid risk_management data type for user {user_id}: {type(risk_data)}"
                         )
 
-                if "notifications" in kwargs:
-                    notif_data = kwargs["notifications"]
+                if "notifications" in settings:
+                    notif_data = settings["notifications"]
                     if isinstance(notif_data, dict):
-                        updates.append("notifications = ?")
+                        update_fields.append("notifications = ?")
                         params.append(
                             self._safe_json_dumps(notif_data, "notifications")
                         )
@@ -617,10 +591,10 @@ class MultiUserDatabase:
                             f"Invalid notifications data type for user {user_id}: {type(notif_data)}"
                         )
 
-                if "emergency" in kwargs:
-                    emergency_data = kwargs["emergency"]
+                if "emergency" in settings:
+                    emergency_data = settings["emergency"]
                     if isinstance(emergency_data, dict):
-                        updates.append("emergency = ?")
+                        update_fields.append("emergency = ?")
                         params.append(
                             self._safe_json_dumps(emergency_data, "emergency")
                         )
@@ -629,27 +603,35 @@ class MultiUserDatabase:
                             f"Invalid emergency data type for user {user_id}: {type(emergency_data)}"
                         )
 
-                if updates:
-                    updates.append("last_updated = CURRENT_TIMESTAMP")
+                if update_fields:
+                    update_fields.append("last_updated = CURRENT_TIMESTAMP")
                     params.append(user_id)
 
                     await db.execute(
                         f"""
-                        UPDATE user_settings SET {', '.join(updates)} WHERE user_id = ?
+                        UPDATE user_settings SET {', '.join(update_fields)} WHERE user_id = ?
                     """,
                         params,
                     )
                     await db.commit()
                     logger.debug(f"Successfully updated settings for user {user_id}")
-
-            except Exception as e:
-                logger.error(f"Error updating user settings for user {user_id}: {e}")
-                # Try to rollback the transaction
-                try:
-                    await db.rollback()
-                except:
-                    pass
-                raise
+                    return True
+                else:
+                    logger.warning(f"No valid settings to update for user {user_id}")
+                    return False
+        except Exception as e:
+            logger.error(f"Error updating user settings for user {user_id}: {e}")
+            # Try to rollback the transaction
+            try:
+                # This part of the original code was not using aiosqlite.connect,
+                # so rollback is not directly applicable here.
+                # If aiosqlite.connect was used, it would be:
+                # async with aiosqlite.connect(self.db_path) as db:
+                #     await db.rollback()
+                pass  # No rollback for aiosqlite.connect
+            except:
+                pass
+            raise
 
     # Trade Management
     async def create_trade(

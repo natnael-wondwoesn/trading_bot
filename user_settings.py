@@ -10,7 +10,7 @@ class UserSettings:
     def __init__(self, settings_file: str = "user_settings.json"):
         self.settings_file = settings_file
         self.default_settings = {
-            "strategy": "RSI_EMA",  # RSI_EMA, MACD, BOLLINGER
+            "strategy": "ENHANCED_RSI_EMA",  # ENHANCED_RSI_EMA, RSI_EMA, MACD, BOLLINGER
             "risk_management": {
                 "max_risk_per_trade": 0.02,  # 2%
                 "stop_loss_atr": 2.0,
@@ -78,11 +78,20 @@ class UserSettings:
         return self.settings["strategy"]
 
     def set_strategy(self, strategy: str):
-        if strategy in ["RSI_EMA", "MACD", "BOLLINGER"]:
+        if strategy in ["ENHANCED_RSI_EMA", "RSI_EMA", "MACD", "BOLLINGER"]:
             self.settings["strategy"] = strategy
             self.save_settings()
             return True
         return False
+
+    def get_strategy_options(self) -> Dict[str, str]:
+        """Get available strategy options with descriptions"""
+        return {
+            "ENHANCED_RSI_EMA": "Enhanced RSI + EMA - Improved signal generation with better market adaptability",
+            "RSI_EMA": "RSI + EMA - Basic RSI and EMA combination strategy",
+            "MACD": "MACD Strategy - Moving Average Convergence Divergence signals",
+            "BOLLINGER": "Bollinger Bands - Mean reversion and volatility breakout strategy",
+        }
 
     # Risk Management
     def get_risk_settings(self) -> Dict:

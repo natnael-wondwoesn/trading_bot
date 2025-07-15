@@ -25,16 +25,27 @@ class Config:
     DEFAULT_POSITION_SIZE = 25
     MAX_RISK_PER_TRADE = 0.02  # 2%
     DEFAULT_TIMEFRAME = "1h"
-    DEFAULT_EXCHANGE = "MEXC"  # Options: "MEXC", "BYBIT"
+    DEFAULT_EXCHANGE = (
+        "BYBIT"  # Options: "MEXC", "BYBIT" - Changed to Bybit for better pair support
+    )
 
-    # Trading Pairs
-    TRADING_PAIRS = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "ADAUSDT"]
+    # Trading Pairs - Expanded with high-potential RSI strategy pairs
+    TRADING_PAIRS = [
+        "BTCUSDT",  # Bitcoin - highest volume, excellent for RSI
+        "ETHUSDT",  # Ethereum - strong volatility, good RSI signals
+        "SOLUSDT",  # Solana - high volatility, trending behavior
+        "DOGEUSDT",  # Dogecoin - extreme volatility, excellent RSI swings
+        "XRPUSDT",  # Ripple - high volume, strong price movements
+        "AVAXUSDT",  # Avalanche - L1 blockchain, high volatility
+        "LINKUSDT",  # Chainlink - DeFi leader, consistent volatility
+        "ADAUSDT",  # Cardano - maintained from original list
+    ]
 
     # Strategy Settings
-    ACTIVE_STRATEGY = "RSI_EMA"  # Options: "RSI_EMA", "MACD", "BOLLINGER"
+    ACTIVE_STRATEGY = "ENHANCED_RSI_EMA"  # Default to enhanced strategy
     RSI_PERIOD = 14
-    RSI_OVERSOLD = 35  # Changed from 30 - more sensitive
-    RSI_OVERBOUGHT = 65  # Changed from 70 - more sensitive
+    RSI_OVERSOLD = 35  # Enhanced strategy uses 40, but keep config for flexibility
+    RSI_OVERBOUGHT = 65  # Enhanced strategy uses 60, but keep config for flexibility
     EMA_FAST = 9
     EMA_SLOW = 21
 

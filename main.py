@@ -8,6 +8,7 @@ from bot import TradingBot
 from strategy.strategies.rsi_ema_strategy import RSIEMAStrategy
 from strategy.strategies.macd_strategy import MACDStrategy
 from strategy.strategies.bollinger_strategy import BollingerStrategy
+from strategy.strategies.enhanced_rsi_ema_strategy import EnhancedRSIEMAStrategy
 from models.models import PerformanceStats, Signal, TradeSetup
 from mexc.mexc_client import MEXCClient, MEXCTradeExecutor
 from mexc.data_feed import MEXCDataFeed
@@ -60,8 +61,14 @@ class TradingSystem:
             return MACDStrategy()
         elif strategy_type == "BOLLINGER":
             return BollingerStrategy()
-        else:  # Default to RSI_EMA
-            return RSIEMAStrategy(
+        elif strategy_type == "ENHANCED_RSI_EMA":
+            return EnhancedRSIEMAStrategy(
+                rsi_period=Config.RSI_PERIOD,
+                ema_fast=Config.EMA_FAST,
+                ema_slow=Config.EMA_SLOW,
+            )
+        else:  # Default to ENHANCED_RSI_EMA
+            return EnhancedRSIEMAStrategy(
                 rsi_period=Config.RSI_PERIOD,
                 ema_fast=Config.EMA_FAST,
                 ema_slow=Config.EMA_SLOW,

@@ -1,5 +1,5 @@
 {
-  "strategy": "RSI_EMA",
+  "strategy": "ENHANCED_RSI_EMA",
   "risk_management": {
     "max_risk_per_trade": 0.02,
     "stop_loss_atr": 2.0,
@@ -21,5 +21,5 @@
     "max_daily_loss": 0.05,
     "emergency_contact": null
   },
-  "last_updated": "2025-07-08T16:16:27.969986"
+  "last_updated": "2025-07-14T15:31:49.759587"
 }

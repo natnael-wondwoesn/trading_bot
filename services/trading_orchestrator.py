@@ -22,6 +22,7 @@ from models.models import Signal
 from strategy.strategies.bollinger_strategy import BollingerStrategy
 from strategy.strategies.macd_strategy import MACDStrategy
 from strategy.strategies.rsi_ema_strategy import RSIEMAStrategy
+from strategy.strategies.enhanced_rsi_ema_strategy import EnhancedRSIEMAStrategy
 from strategy.strategies.strategy import Strategy
 from exchange_factory import ExchangeFactory, get_user_exchange_suite
 from exchange_interface import BaseExchangeClient, BaseDataFeed, BaseTradeExecutor
@@ -213,6 +214,7 @@ class StrategyFactory:
     """Factory for creating strategy instances"""
 
     STRATEGIES = {
+        "ENHANCED_RSI_EMA": EnhancedRSIEMAStrategy,
         "RSI_EMA": RSIEMAStrategy,
         "MACD": "MACDStrategy",
         "BOLLINGER": "BollingerStrategy",
@@ -220,6 +222,7 @@ class StrategyFactory:
     }
 
     STRATEGY_DESCRIPTIONS = {
+        "ENHANCED_RSI_EMA": "Enhanced RSI + EMA - Improved version with better signal generation and market adaptability",
         "RSI_EMA": "RSI + EMA - Combines RSI oversold/overbought levels with EMA trend confirmation",
         "MACD": "MACD Strategy - Uses MACD crossovers and momentum for signal generation",
         "BOLLINGER": "Bollinger Bands - Mean reversion and breakout strategy using Bollinger Bands",
@@ -231,8 +234,8 @@ class StrategyFactory:
         """Create strategy instance based on name"""
         strategy_class = cls.STRATEGIES.get(strategy_name)
         if not strategy_class:
-            # Default to RSI_EMA
-            strategy_class = RSIEMAStrategy
+            # Default to ENHANCED_RSI_EMA for better performance
+            strategy_class = EnhancedRSIEMAStrategy
         elif isinstance(strategy_class, str):
             # Import strategy classes dynamically
             if strategy_class == "MACDStrategy":
@@ -332,8 +335,8 @@ class TradingOrchestrator:
                 await user_service.reset_user_settings(user_id)
                 settings = await user_service.get_user_settings(user_id)
 
-            # Create strategy instance
-            strategy_name = getattr(settings, "trading_strategy", "RSI_EMA")
+            # Create strategy instance - default to ENHANCED_RSI_EMA
+            strategy_name = getattr(settings, "trading_strategy", "ENHANCED_RSI_EMA")
             strategy = StrategyFactory.create_strategy(strategy_name, settings.__dict__)
 
             # Create risk manager
@@ -664,8 +667,10 @@ class TradingOrchestrator:
                 old_settings = session.settings.copy()
                 session.settings = settings.__dict__
 
-                # Update strategy if changed
-                current_strategy = getattr(settings, "trading_strategy", "RSI_EMA")
+                # Update strategy if changed - default to ENHANCED_RSI_EMA
+                current_strategy = getattr(
+                    settings, "trading_strategy", "ENHANCED_RSI_EMA"
+                )
                 if current_strategy != session.strategy.__class__.__name__:
                     session.strategy = StrategyFactory.create_strategy(
                         current_strategy, settings.__dict__

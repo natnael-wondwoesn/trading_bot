@@ -279,7 +279,7 @@ class UserService:
     async def reset_user_settings(self, user_id: int) -> bool:
         """Reset user settings to defaults"""
         default_settings = {
-            "strategy": "RSI_EMA",
+            "strategy": "ENHANCED_RSI_EMA",
             "risk_management": {
                 "max_risk_per_trade": 0.02,
                 "stop_loss_atr": 2.0,

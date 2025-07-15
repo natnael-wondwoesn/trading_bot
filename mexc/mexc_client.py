@@ -20,23 +20,25 @@ class MEXCClient:
     WS_URL = "wss://wbs.mexc.com/ws"
 
     # MEXC interval mapping for HTTP API (uppercase format)
+        # MEXC interval mapping for HTTP API (correct format)
+        # MEXC interval mapping for HTTP API (correct format based on testing)
     HTTP_INTERVAL_MAP = {
-        "1m": "1M",
-        "3m": "3M",
-        "5m": "5M",
-        "15m": "15M",
-        "30m": "30M",
-        "1h": "1H",
-        "1H": "1H",
-        "2h": "2H",
-        "4h": "4H",
-        "6h": "6H",
-        "8h": "8H",
-        "12h": "12H",
-        "1d": "1D",
-        "3d": "3D",
-        "1w": "1W",
-        "1M": "1M",
+        "1m": "1m",
+        "3m": "3m",
+        "5m": "5m", 
+        "15m": "15m",
+        "30m": "30m",
+        "1h": "1h",
+        "1H": "1h",  # Normalize to lowercase
+        "2h": "2h",
+        "4h": "4h", 
+        "6h": "6h",
+        "8h": "8h",
+        "12h": "12h",
+        "1d": "1d",
+        "3d": "3d",
+        "1w": "1w",
+        "1M": "1M",  # Monthly is uppercase
     }
 
     # MEXC interval mapping for WebSocket API (Min/Hour format)
@@ -100,6 +102,11 @@ class MEXCClient:
                 data = await response.json()
                 if response.status != 200:
                     logger.error(f"API Error: {data}")
+                    # Handle specific interval error
+                    if isinstance(data, dict) and data.get('code') == -1121:
+                        error_msg = f"Invalid interval error for {params.get('interval', 'unknown')}"
+                        logger.error(error_msg)
+                        raise ValueError(error_msg)
                     raise Exception(f"API Error: {data}")
                 return data
         except Exception as e:
@@ -109,33 +116,45 @@ class MEXCClient:
     # Market Data Methods
     async def get_exchange_info(self) -> Dict:
         """Get exchange trading rules and symbol information"""
-        return await self._request("GET", "/api/v3/exchangeInfo", signed=True)
+        return await self._request("GET", "/api/v3/exchangeInfo", signed=False)
 
     async def get_ticker(self, symbol: str) -> Dict:
         """Get 24hr ticker price change statistics"""
         params = {"symbol": symbol}
-        return await self._request("GET", "/api/v3/ticker/24hr", params, signed=True)
+        data = await self._request("GET", "/api/v3/ticker/24hr", params, signed=False)
+        # Ensure price precision
+        if "lastPrice" in data:
+            data["lastPrice"] = f"{float(data['lastPrice']):.4f}"
+        return data
 
     async def get_orderbook(self, symbol: str, limit: int = 20) -> Dict:
         """Get current order book"""
         params = {"symbol": symbol, "limit": limit}
-        return await self._request("GET", "/api/v3/depth", params, signed=True)
+        return await self._request("GET", "/api/v3/depth", params, signed=False)
 
     async def get_recent_trades(self, symbol: str, limit: int = 100) -> List[Dict]:
         """Get recent trades"""
         params = {"symbol": symbol, "limit": limit}
-        return await self._request("GET", "/api/v3/trades", params, signed=True)
+        return await self._request("GET", "/api/v3/trades", params, signed=False)
 
     async def get_klines(
         self, symbol: str, interval: str = "1h", limit: int = 100
     ) -> pd.DataFrame:
         """Get candlestick data"""
-        # Convert interval to MEXC format
-        mexc_interval = self.HTTP_INTERVAL_MAP.get(interval, interval)
+        # Convert interval to MEXC format with validation
+        mexc_interval = self.HTTP_INTERVAL_MAP.get(interval, "1h")  # Default to 1h
+        
+        # Validate interval is supported
+        valid_intervals = ["1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "8h", "12h", "1d", "3d", "1w", "1M"]
+        if mexc_interval not in valid_intervals:
+            logger.warning(f"Invalid interval {interval}, using 1h")
+            mexc_interval = "1h"
 
         params = {"symbol": symbol, "interval": mexc_interval, "limit": limit}
+        
+        logger.debug(f"MEXC klines request: {params}")
 
-        data = await self._request("GET", "/api/v3/klines", params, signed=True)
+        data = await self._request("GET", "/api/v3/klines", params, signed=False)
 
         # Log the actual response structure for debugging
         logger.info(f"Klines response structure for {symbol}: {len(data)} rows")
@@ -304,6 +323,36 @@ class MEXCClient:
             elif msg.type == aiohttp.WSMsgType.CLOSED:
                 logger.info("WebSocket closed")
                 break
+
+    
+    async def get_accurate_price(self, symbol: str) -> float:
+        """Get accurate real-time price with high precision"""
+        try:
+            # Use price ticker endpoint for most accurate price
+            url = f"{self.BASE_URL}/api/v3/ticker/price"
+            params = {"symbol": symbol}
+            
+            if not self.session:
+                self.session = aiohttp.ClientSession()
+            
+            async with self.session.get(url, params=params) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    # Return price with 4 decimal places precision
+                    return round(float(data["price"]), 4)
+                else:
+                    # Fallback to 24hr ticker
+                    ticker = await self.get_ticker(symbol)
+                    return round(float(ticker["lastPrice"]), 4)
+                    
+        except Exception as e:
+            logger.error(f"Error getting accurate price for {symbol}: {e}")
+            # Final fallback to regular ticker
+            try:
+                ticker = await self.get_ticker(symbol)
+                return round(float(ticker["lastPrice"]), 4)
+            except:
+                raise Exception(f"Cannot get price for {symbol}")
 
     async def close(self):
         """Close all connections"""

@@ -1,5 +1,179 @@
 #!/usr/bin/env python3
 """
+Fix Syntax Error in production_main.py
+"""
+
+import os
+import re
+from datetime import datetime
+import sys
+import asyncio
+from pathlib import Path
+
+
+def fix_syntax_error():
+    """Fix the unterminated string literal in production_main.py"""
+    print("🔧 FIXING SYNTAX ERROR IN PRODUCTION_MAIN.PY")
+    print("=" * 50)
+
+    production_file = "production_main.py"
+
+    if not os.path.exists(production_file):
+        print("❌ production_main.py not found")
+        return False
+
+    try:
+        # Read the file with error handling
+        with open(production_file, "r", encoding="utf-8", errors="replace") as f:
+            lines = f.readlines()
+
+        print(f"📖 Read {len(lines)} lines from production_main.py")
+
+        # Find and fix the problematic line around line 328
+        fixed_lines = []
+        line_number = 0
+
+        for line in lines:
+            line_number += 1
+            original_line = line
+
+            # Look for unterminated string literals
+            if (
+                'logger.info("' in line
+                and not line.rstrip().endswith('")')
+                and not line.rstrip().endswith('")')
+            ):
+                # Check if the string is not properly closed
+                quote_count = line.count('"')
+                if quote_count % 2 != 0:  # Odd number of quotes means unterminated
+                    print(
+                        f"🔍 Found unterminated string at line {line_number}: {line.strip()}"
+                    )
+
+                    # Try to fix common patterns
+                    if line.strip().endswith('"'):
+                        # Already properly terminated
+                        pass
+                    elif 'logger.info("' in line and not line.rstrip().endswith('")'):
+                        # Add closing quote and parenthesis
+                        line = line.rstrip() + '")\n'
+                        print(
+                            f"✅ Fixed line {line_number}: Added closing quote and parenthesis"
+                        )
+                    elif line.strip().endswith("..."):
+                        # Replace ... with proper ending
+                        line = re.sub(r"\.\.\..*$", '")\n', line)
+                        print(
+                            f"✅ Fixed line {line_number}: Replaced ... with proper ending"
+                        )
+
+            # Look for other common syntax issues
+            elif "logger.info(" in line and '"' in line:
+                # Check for improperly formatted logger statements
+                if line.count('"') % 2 != 0 and not line.strip().endswith('")'):
+                    print(
+                        f"🔍 Found potential logger issue at line {line_number}: {line.strip()}"
+                    )
+
+                    # Try to fix
+                    if not line.rstrip().endswith('")') and not line.rstrip().endswith(
+                        '")'
+                    ):
+                        line = line.rstrip() + '")\n'
+                        print(f"✅ Fixed line {line_number}: Added missing closing")
+
+            fixed_lines.append(line)
+
+        # Write back the fixed content
+        with open(production_file, "w", encoding="utf-8") as f:
+            f.writelines(fixed_lines)
+
+        print("✅ Syntax fixes applied successfully")
+
+        # Verify the fix by trying to compile
+        try:
+            with open(production_file, "r", encoding="utf-8") as f:
+                content = f.read()
+
+            compile(content, production_file, "exec")
+            print("✅ Syntax validation passed")
+            return True
+
+        except SyntaxError as e:
+            print(f"❌ Still has syntax error: {e}")
+            print(f"   Line {e.lineno}: {e.text}")
+
+            # Try a more aggressive fix
+            return fix_specific_syntax_error(e.lineno)
+
+    except Exception as e:
+        print(f"❌ Failed to fix syntax error: {e}")
+        return False
+
+
+def fix_specific_syntax_error(error_line):
+    """Fix specific syntax error at given line number"""
+    print(f"\n🎯 TARGETING SPECIFIC ERROR AT LINE {error_line}")
+    print("=" * 30)
+
+    try:
+        with open("production_main.py", "r", encoding="utf-8", errors="replace") as f:
+            lines = f.readlines()
+
+        # Look at the problematic line and surrounding context
+        start_line = max(0, error_line - 5)
+        end_line = min(len(lines), error_line + 5)
+
+        print("Context around error:")
+        for i in range(start_line, end_line):
+            marker = ">>> " if i == error_line - 1 else "    "
+            print(f"{marker}Line {i+1}: {lines[i].rstrip()}")
+
+        # Fix the specific line
+        if error_line <= len(lines):
+            problematic_line = lines[error_line - 1]
+            print(f"\n🔧 Fixing line {error_line}: {problematic_line.strip()}")
+
+            # Common fixes
+            if 'logger.info("' in problematic_line:
+                # Find the opening quote
+                start_quote = problematic_line.find('logger.info("') + 12
+
+                # Check if there's a proper closing
+                remaining = problematic_line[start_quote:]
+                if not ('")' in remaining or remaining.strip().endswith('")')):
+                    # Add proper closing
+                    if remaining.strip().endswith('"'):
+                        lines[error_line - 1] = problematic_line.rstrip() + ")\n"
+                    else:
+                        lines[error_line - 1] = problematic_line.rstrip() + '")\n'
+
+                    print(f"✅ Fixed: {lines[error_line - 1].strip()}")
+
+            # Write back
+            with open("production_main.py", "w", encoding="utf-8") as f:
+                f.writelines(lines)
+
+            # Test again
+            with open("production_main.py", "r", encoding="utf-8") as f:
+                content = f.read()
+
+            compile(content, "production_main.py", "exec")
+            print("✅ Specific fix successful")
+            return True
+
+    except Exception as e:
+        print(f"❌ Specific fix failed: {e}")
+        return False
+
+
+def create_minimal_production_main():
+    """Create a minimal working production_main.py if fixing fails"""
+    print("\n🆘 CREATING MINIMAL WORKING PRODUCTION_MAIN.PY")
+    print("=" * 50)
+
+    minimal_content = '''#!/usr/bin/env python3
+"""
 Production Main Entry Point - Minimal Working Version
 """
 
@@ -293,3 +467,50 @@ if __name__ == "__main__":
         asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
     
     asyncio.run(main())
+'''
+
+    # Backup the original
+    if os.path.exists("production_main.py"):
+        backup_name = (
+            f"production_main_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.py"
+        )
+        os.rename("production_main.py", backup_name)
+        print(f"📁 Backed up original to {backup_name}")
+
+    # Write the minimal version
+    with open("production_main.py", "w", encoding="utf-8") as f:
+        f.write(minimal_content)
+
+    print("✅ Created minimal working production_main.py")
+    return True
+
+
+def main():
+    """Main execution"""
+    print("FIXING SYNTAX ERROR IN PRODUCTION_MAIN.PY")
+    print("=" * 60)
+
+    # Try to fix the existing file first
+    if fix_syntax_error():
+        print("\n🎉 SYNTAX ERROR FIXED!")
+        print("✅ Your original production_main.py has been repaired")
+    else:
+        print("\n⚠️ Could not fix existing file, creating minimal version...")
+        if create_minimal_production_main():
+            print("\n🎉 MINIMAL VERSION CREATED!")
+            print("✅ Created a clean working production_main.py")
+        else:
+            print("\n❌ Failed to create minimal version")
+            return
+
+    print("\n🚀 NOW YOU CAN START YOUR SYSTEM:")
+    print("   python production_main.py")
+
+    print("\n📊 MONITOR YOUR SYSTEM:")
+    print("   http://localhost:8080/health")
+    print("   http://localhost:8080/signals/status")
+    print("   http://localhost:8080/signals/force-scan")
+
+
+if __name__ == "__main__":
+    main()

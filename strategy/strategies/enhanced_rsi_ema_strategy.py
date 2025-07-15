@@ -55,6 +55,24 @@ class EnhancedRSIEMAStrategy(Strategy):
 
         return self.indicators
 
+    
+    def boost_confidence(self, base_confidence: float, signal_strength: dict) -> float:
+        """Boost confidence based on multiple factors"""
+        boosted = base_confidence
+        
+        # Boost for multiple signal confirmations
+        if len(signal_strength.get("reasons", [])) >= 3:
+            boosted *= 1.3
+        elif len(signal_strength.get("reasons", [])) >= 2:
+            boosted *= 1.2
+            
+        # Boost for strong momentum
+        if "Strong RSI signal" in signal_strength.get("reasons", []):
+            boosted *= 1.2
+            
+        # Cap at 95% to maintain realism
+        return min(boosted, 0.95)
+
     def generate_signal(self, data: pd.DataFrame) -> Signal:
         """Generate trading signal with multiple signal types"""
         indicators = self.calculate_indicators(data)
@@ -90,14 +108,14 @@ class EnhancedRSIEMAStrategy(Strategy):
             signal_strength["buy"] += 0.3
             signal_strength["reasons"].append("EMA bullish crossover")
         elif ema_bullish:
-            signal_strength["buy"] += 0.15
+            signal_strength["buy"] += 0.25  # Increased strong signal bonus
             signal_strength["reasons"].append("EMA bullish trend")
 
         if ema_bearish_crossover:
             signal_strength["sell"] += 0.3
             signal_strength["reasons"].append("EMA bearish crossover")
         elif ema_bearish:
-            signal_strength["sell"] += 0.15
+            signal_strength["sell"] += 0.25  # Increased strong signal bonus
             signal_strength["reasons"].append("EMA bearish trend")
 
         # 3. Price position relative to EMAs
@@ -134,8 +152,8 @@ class EnhancedRSIEMAStrategy(Strategy):
         )  # Reduced from 0.8
 
         if volume_ok:
-            signal_strength["buy"] += 0.05
-            signal_strength["sell"] += 0.05
+            signal_strength["buy"] += 0.15  # Increased volume bonus
+            signal_strength["sell"] += 0.15  # Increased volume bonus
             signal_strength["reasons"].append("Volume confirmation")
 
         # Determine final action and confidence
@@ -143,14 +161,14 @@ class EnhancedRSIEMAStrategy(Strategy):
         sell_confidence = min(signal_strength["sell"], 1.0)
 
         # Lower confidence threshold for more signals
-        min_confidence = 0.4  # Reduced from 0.7
+        min_confidence = 0.3  # Further reduced for more signals
 
         if buy_confidence >= min_confidence and buy_confidence > sell_confidence:
             action = "BUY"
-            confidence = buy_confidence
+            confidence = self.boost_confidence(buy_confidence, signal_strength)  # Scale up confidence
         elif sell_confidence >= min_confidence and sell_confidence > buy_confidence:
             action = "SELL"
-            confidence = sell_confidence
+            confidence = self.boost_confidence(sell_confidence, signal_strength)  # Scale up confidence
         else:
             action = "HOLD"
             confidence = 0

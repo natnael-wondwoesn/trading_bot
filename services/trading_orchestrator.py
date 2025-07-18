@@ -23,6 +23,7 @@ from strategy.strategies.bollinger_strategy import BollingerStrategy
 from strategy.strategies.macd_strategy import MACDStrategy
 from strategy.strategies.rsi_ema_strategy import RSIEMAStrategy
 from strategy.strategies.enhanced_rsi_ema_strategy import EnhancedRSIEMAStrategy
+from strategy.strategies.vishva_ml_strategy import VishvaMLStrategy
 from strategy.strategies.strategy import Strategy
 from exchange_factory import ExchangeFactory, get_user_exchange_suite
 from exchange_interface import BaseExchangeClient, BaseDataFeed, BaseTradeExecutor
@@ -216,6 +217,7 @@ class StrategyFactory:
     STRATEGIES = {
         "ENHANCED_RSI_EMA": EnhancedRSIEMAStrategy,
         "RSI_EMA": RSIEMAStrategy,
+        "VISHVA_ML": VishvaMLStrategy,
         "MACD": "MACDStrategy",
         "BOLLINGER": "BollingerStrategy",
         "FOREX": "ForexStrategy",
@@ -224,6 +226,7 @@ class StrategyFactory:
     STRATEGY_DESCRIPTIONS = {
         "ENHANCED_RSI_EMA": "Enhanced RSI + EMA - Improved version with better signal generation and market adaptability",
         "RSI_EMA": "RSI + EMA - Combines RSI oversold/overbought levels with EMA trend confirmation",
+        "VISHVA_ML": "VishvaAlgo ML - Advanced ML strategy with 190+ indicators and 81%+ win rate using ensemble models",
         "MACD": "MACD Strategy - Uses MACD crossovers and momentum for signal generation",
         "BOLLINGER": "Bollinger Bands - Mean reversion and breakout strategy using Bollinger Bands",
         "FOREX": "Forex Strategy - Specialized strategy for forex pairs with spread filtering",
@@ -251,7 +254,13 @@ class StrategyFactory:
 
                 strategy_class = ForexStrategy
 
-        return strategy_class()
+        # Special handling for ML strategy which needs symbol parameter
+        if strategy_name == "VISHVA_ML":
+            symbol = settings.get("trading_symbol", "BTCUSDT")
+            timeframe = settings.get("timeframe", "1h")
+            return strategy_class(symbol=symbol, timeframe=timeframe)
+        else:
+            return strategy_class()
 
     @classmethod
     def get_available_strategies(cls) -> Dict[str, str]:

@@ -24,7 +24,14 @@ class TradingBot:
 
     def format_signal_message(self, signal: Signal, amount: float = 25) -> str:
         """Format signal notification message"""
-        message = f"""🚨 **TRADING SIGNAL DETECTED**
+        # Check if MEXC auto mode is enabled and adjust amount
+        if user_settings.is_mexc_auto_mode():
+            amount = user_settings.get_mexc_max_volume()
+            mode_text = f"🤖 **MEXC AUTO MODE** (Max: ${amount})"
+        else:
+            mode_text = "📊 **TRADING SIGNAL DETECTED**"
+
+        message = f"""{mode_text}
 
 📊 Pair: {signal.pair}
 💰 Current Price: ${signal.current_price:,.2f}

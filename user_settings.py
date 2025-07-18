@@ -11,6 +11,7 @@ class UserSettings:
         self.settings_file = settings_file
         self.default_settings = {
             "strategy": "ENHANCED_RSI_EMA",  # ENHANCED_RSI_EMA, RSI_EMA, MACD, BOLLINGER
+            "mexc_auto_mode": False,  # New: MEXC automated trading mode with $5 max
             "risk_management": {
                 "max_risk_per_trade": 0.02,  # 2%
                 "stop_loss_atr": 2.0,
@@ -20,6 +21,7 @@ class UserSettings:
                 "trading_enabled": True,
                 "custom_stop_loss": None,  # Custom % if set
                 "custom_take_profit": None,  # Custom % if set
+                "mexc_max_volume": 5.0,  # $5 maximum per trade in MEXC auto mode
             },
             "notifications": {
                 "signal_alerts": True,
@@ -170,6 +172,35 @@ class UserSettings:
             return True
         return False
 
+    # MEXC Automated Trading Mode
+    def enable_mexc_auto_mode(self):
+        """Enable MEXC automated trading mode with $5 maximum volume"""
+        self.settings["mexc_auto_mode"] = True
+        self.save_settings()
+        return True
+
+    def disable_mexc_auto_mode(self):
+        """Disable MEXC automated trading mode"""
+        self.settings["mexc_auto_mode"] = False
+        self.save_settings()
+        return True
+
+    def is_mexc_auto_mode(self) -> bool:
+        """Check if MEXC automated trading mode is enabled"""
+        return self.settings.get("mexc_auto_mode", False)
+
+    def get_mexc_max_volume(self) -> float:
+        """Get maximum volume for MEXC automated trading"""
+        return self.settings["risk_management"].get("mexc_max_volume", 5.0)
+
+    def set_mexc_max_volume(self, max_volume: float):
+        """Set maximum volume for MEXC automated trading (1-10 USD)"""
+        if 1.0 <= max_volume <= 10.0:
+            self.settings["risk_management"]["mexc_max_volume"] = max_volume
+            self.save_settings()
+            return True
+        return False
+
     # Notification Settings
     def toggle_signal_alerts(self):
         current = self.settings["notifications"]["signal_alerts"]
@@ -198,6 +229,7 @@ class UserSettings:
 
 🔧 **Strategy**: {strategy_names.get(self.settings['strategy'], self.settings['strategy'])}
 📈 **Trading**: {'✅ Enabled' if risk['trading_enabled'] else '❌ Disabled'}
+🤖 **MEXC Auto Mode**: {'✅ Enabled ($' + str(risk.get('mexc_max_volume', 5.0)) + ' max)' if self.settings.get('mexc_auto_mode', False) else '❌ Disabled'}
 🚨 **Emergency Mode**: {'🔴 ACTIVE' if emergency['emergency_mode'] else '✅ Normal'}
 
 💰 **Risk Management**:

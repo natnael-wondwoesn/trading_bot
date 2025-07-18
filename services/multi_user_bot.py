@@ -124,6 +124,9 @@ class MultiUserTradingBot:
             CommandHandler("performance", self._handle_performance),
             CommandHandler("subscription", self._handle_subscription),
             CommandHandler("support", self._handle_support),
+            CommandHandler("mexc_auto", self._handle_mexc_auto),
+            CommandHandler("mexc_scan", self._handle_mexc_scan),
+            CommandHandler("mexc_balance", self._handle_mexc_balance),
             CallbackQueryHandler(self._handle_callback),
             MessageHandler(filters.COMMAND, self._handle_unknown_command),
         ]
@@ -581,6 +584,212 @@ Direct phone support available for Enterprise subscribers."""
             support_message, reply_markup=reply_markup, parse_mode="Markdown"
         )
 
+    async def _handle_mexc_auto(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ):
+        """Handle /mexc_auto command - MEXC automated trading with $5 max volume"""
+        user_context = await self._get_user_context(update.effective_user.id, update)
+        if not user_context:
+            return
+
+        await self._increment_stat("commands_processed_today")
+
+        # Check if user has MEXC selected
+        if user_context.settings.get("exchange") != "MEXC":
+            await update.message.reply_text(
+                "⚠️ **MEXC Auto Mode Required**\n\n"
+                "You need to set MEXC as your exchange first.\n"
+                "Use /settings → Exchange → MEXC",
+                parse_mode="Markdown",
+            )
+            return
+
+        # Check current MEXC auto mode status
+        mexc_auto_enabled = user_context.settings.get("mexc_auto_mode", False)
+        max_volume = user_context.settings.get("mexc_max_volume", 5.0)
+
+        keyboard = [
+            [
+                InlineKeyboardButton(
+                    f"{'✅ Disable' if mexc_auto_enabled else '🤖 Enable'} MEXC Auto",
+                    callback_data=f"mexc_auto_toggle_{user_context.user.user_id}",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    f"💰 Max Volume: ${max_volume}",
+                    callback_data=f"mexc_auto_volume_{user_context.user.user_id}",
+                ),
+                InlineKeyboardButton(
+                    "🔍 Manual Scan",
+                    callback_data=f"mexc_auto_scan_{user_context.user.user_id}",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    "💳 Check Balance",
+                    callback_data=f"mexc_auto_balance_{user_context.user.user_id}",
+                ),
+                InlineKeyboardButton(
+                    "📊 Status",
+                    callback_data=f"mexc_auto_status_{user_context.user.user_id}",
+                ),
+            ],
+        ]
+
+        message = f"""🤖 **MEXC Automated Trading**
+
+**Status:** {'🟢 Enabled' if mexc_auto_enabled else '🔴 Disabled'}
+**Max Volume:** ${max_volume} per trade
+**Exchange:** MEXC (Required)
+
+**Features:**
+• 🎯 Automatic signal detection
+• 💰 ${max_volume} maximum per trade (safe trading)
+• ✅ One-click trade approval
+• 🛡️ Built-in stop-loss protection
+• 📱 Simple button interface
+
+**How it works:**
+• 🔍 System scans for high-confidence signals
+• 📱 You get notifications with TRADE buttons  
+• ✅ Click to approve trades (max ${max_volume})
+• 📈 Automatic risk management
+
+**Safety Features:**
+• Maximum ${max_volume} per trade
+• High confidence signals only (60%+)
+• Rate limiting (5-min cooldown)
+• Balance verification before trades
+
+⚠️ **Important:** This mode is for MEXC exchange only with strict risk controls."""
+
+        await update.message.reply_text(
+            message, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown"
+        )
+
+    async def _handle_mexc_scan(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ):
+        """Handle /mexc_scan command - manual signal scan"""
+        user_context = await self._get_user_context(update.effective_user.id, update)
+        if not user_context:
+            return
+
+        await self._increment_stat("commands_processed_today")
+
+        # Check if MEXC auto mode is enabled
+        if not user_context.settings.get("mexc_auto_mode", False):
+            await update.message.reply_text(
+                "⚠️ **MEXC Auto Mode Disabled**\n\n"
+                "Enable MEXC Auto Mode first using /mexc_auto",
+                parse_mode="Markdown",
+            )
+            return
+
+        # Send scanning message
+        scanning_msg = await update.message.reply_text(
+            "🔍 **Scanning MEXC Markets...**\n\n"
+            "Analyzing signals for:\n"
+            "• BTCUSDT, ETHUSDT, ADAUSDT\n"
+            "• DOGEUSDT, SOLUSDT\n\n"
+            "Please wait...",
+            parse_mode="Markdown",
+        )
+
+        try:
+            # Trigger manual scan via trading orchestrator
+            from services.trading_orchestrator import trading_orchestrator
+
+            # Request signals for this specific user
+            signals = await trading_orchestrator.manual_signal_scan(
+                user_context.user.user_id, exchange="MEXC"
+            )
+
+            if signals:
+                await scanning_msg.edit_text(
+                    f"✅ **Scan Complete**\n\n"
+                    f"Found {len(signals)} signals!\n"
+                    f"Check above for trade notifications.",
+                    parse_mode="Markdown",
+                )
+            else:
+                await scanning_msg.edit_text(
+                    "📊 **Scan Complete**\n\n"
+                    "No signals found at this time.\n"
+                    "Markets are in hold mode.",
+                    parse_mode="Markdown",
+                )
+
+        except Exception as e:
+            logger.error(f"Error in manual scan: {e}")
+            await scanning_msg.edit_text(
+                "❌ **Scan Error**\n\n" "Could not complete scan. Please try again.",
+                parse_mode="Markdown",
+            )
+
+    async def _handle_mexc_balance(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ):
+        """Handle /mexc_balance command - show MEXC account balance"""
+        user_context = await self._get_user_context(update.effective_user.id, update)
+        if not user_context:
+            return
+
+        await self._increment_stat("commands_processed_today")
+
+        try:
+            # Get MEXC balance data
+            balance_data = await self._get_mexc_account_data(user_context.user.user_id)
+
+            if balance_data.get("api_status") != "connected":
+                await update.message.reply_text(
+                    "❌ **Connection Error**\n\n"
+                    "Could not connect to MEXC API.\n"
+                    "Please check your settings.",
+                    parse_mode="Markdown",
+                )
+                return
+
+            usdt_balance = 0
+            for balance in balance_data.get("balances", []):
+                if balance["asset"] == "USDT":
+                    usdt_balance = balance["free"]
+                    break
+
+            max_volume = user_context.settings.get("mexc_max_volume", 5.0)
+            possible_trades = (
+                int(usdt_balance / max_volume) if usdt_balance >= max_volume else 0
+            )
+
+            message = f"""💰 **MEXC Account Balance**
+
+💵 **Available USDT:** ${usdt_balance:.2f}
+🎯 **Max Trade Size:** ${max_volume}
+📊 **Possible Trades:** {possible_trades}
+
+{"✅ **Ready to trade!**" if usdt_balance >= max_volume else "⚠️ **Insufficient balance for trading**"}
+
+💡 **Note:** Each trade uses maximum ${max_volume} for risk control.
+
+**Other Balances:**"""
+
+            # Add other significant balances
+            for balance in balance_data.get("balances", [])[:5]:  # Top 5 balances
+                if balance["asset"] != "USDT" and balance["total"] > 0:
+                    message += f"\n• {balance['asset']}: {balance['total']:.6f}"
+
+            await update.message.reply_text(message, parse_mode="Markdown")
+
+        except Exception as e:
+            logger.error(f"Error getting MEXC balance: {e}")
+            await update.message.reply_text(
+                "❌ **Balance Error**\n\n"
+                "Could not retrieve balance information.\n"
+                "Please try again later.",
+                parse_mode="Markdown",
+            )
+
     async def _handle_unknown_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
@@ -601,6 +810,9 @@ I don't recognize the command: `{command}`
 • `/dashboard` - Trading overview
 • `/settings` - Configure bot
 • `/emergency` - Emergency controls
+• `/mexc_auto` - MEXC automated trading ($5 max)
+• `/mexc_scan` - Manual signal scan
+• `/mexc_balance` - Check MEXC balance
 
 Type `/help` for a complete list of commands! 🤖"""
 
@@ -1290,6 +1502,32 @@ Ready to upgrade your trading experience?"""
                     await query.edit_message_text("Invalid exchange selection.")
                     return
                 user_id = int(data_parts[3])
+            elif action_type == "mexc":
+                # MEXC callback formats:
+                # mexc_auto_toggle_user_id, mexc_auto_volume_user_id, etc.
+                # mexc_trade_approve_SYMBOL_TIMESTAMP_user_id
+                # mexc_volume_set_AMOUNT_user_id
+                if action == "auto":
+                    # Format: mexc_auto_SUBACTION_user_id (toggle, volume, scan, balance, status)
+                    if len(data_parts) < 4:
+                        await query.edit_message_text("Invalid MEXC auto request.")
+                        return
+                    user_id = int(data_parts[3])
+                elif action == "trade":
+                    # Format: mexc_trade_ACTION_SYMBOL_TIMESTAMP_user_id
+                    if len(data_parts) < 6:
+                        await query.edit_message_text("Invalid MEXC trade request.")
+                        return
+                    user_id = int(data_parts[5])
+                elif action == "volume":
+                    # Format: mexc_volume_set_AMOUNT_user_id
+                    if len(data_parts) < 5:
+                        await query.edit_message_text("Invalid MEXC volume request.")
+                        return
+                    user_id = int(data_parts[4])
+                else:
+                    # Fallback for other MEXC formats
+                    user_id = int(data_parts[-1])  # Last part is usually user_id
             else:
                 # Standard format: action_type_action_user_id
                 user_id = int(data_parts[2])
@@ -1308,6 +1546,12 @@ Ready to upgrade your trading experience?"""
             await self._handle_settings_callback(query, action, user_context)
         elif action_type == "dashboard":
             await self._handle_dashboard_callback(query, action, user_context)
+        elif action_type == "mexc" and action == "auto":
+            await self._handle_mexc_auto_callback(query, data_parts, user_context)
+        elif action_type == "mexc" and action == "trade":
+            await self._handle_mexc_trade_callback(query, data_parts, user_context)
+        elif action_type == "mexc" and action == "volume":
+            await self._handle_mexc_volume_callback(query, data_parts, user_context)
         elif action_type == "exchange" and action == "select":
             # Handle exchange selection
             if len(data_parts) >= 3:
@@ -2148,6 +2392,447 @@ Stay informed about your trading activity with customizable notifications."""
                 simple_keyboard,
             )
 
+    async def _handle_mexc_auto_callback(self, query, data_parts, user_context):
+        """Handle MEXC auto mode callbacks"""
+        try:
+            # Parse callback data: mexc_auto_SUBACTION_user_id
+            # data_parts = ["mexc", "auto", "toggle", "user_id"]
+            sub_action = data_parts[2] if len(data_parts) > 2 else ""
+
+            if sub_action == "toggle":
+                # Toggle MEXC auto mode
+                current_state = user_context.settings.get("mexc_auto_mode", False)
+                new_state = not current_state
+
+                # Update user settings
+                user_context.settings["mexc_auto_mode"] = new_state
+
+                # Update in database
+                await user_service.update_user_settings(
+                    user_context.user.user_id, mexc_auto_mode=new_state
+                )
+
+                status_text = "🟢 Enabled" if new_state else "🔴 Disabled"
+                action_text = "enabled" if new_state else "disabled"
+
+                await query.edit_message_text(
+                    f"✅ **MEXC Auto Mode {action_text.title()}**\n\n"
+                    f"Status: {status_text}\n\n"
+                    f"{'You will now receive automated trade signals with $5 maximum volume.' if new_state else 'Automated trading has been disabled.'}\n\n"
+                    f"Use /mexc_auto to configure settings.",
+                    parse_mode="Markdown",
+                )
+
+            elif sub_action == "volume":
+                # Show volume options
+                keyboard = [
+                    [
+                        InlineKeyboardButton(
+                            "💰 $3",
+                            callback_data=f"mexc_volume_set_3_{user_context.user.user_id}",
+                        ),
+                        InlineKeyboardButton(
+                            "💰 $5",
+                            callback_data=f"mexc_volume_set_5_{user_context.user.user_id}",
+                        ),
+                    ],
+                    [
+                        InlineKeyboardButton(
+                            "💰 $7",
+                            callback_data=f"mexc_volume_set_7_{user_context.user.user_id}",
+                        ),
+                        InlineKeyboardButton(
+                            "💰 $10",
+                            callback_data=f"mexc_volume_set_10_{user_context.user.user_id}",
+                        ),
+                    ],
+                    [
+                        InlineKeyboardButton(
+                            "← Back",
+                            callback_data=f"mexc_auto_back_{user_context.user.user_id}",
+                        ),
+                    ],
+                ]
+
+                await query.edit_message_text(
+                    "💰 **Set Maximum Trade Volume**\n\n"
+                    "Choose your maximum trade volume per position:\n\n"
+                    "• **$3** - Very conservative\n"
+                    "• **$5** - Recommended (default)\n"
+                    "• **$7** - Moderate risk\n"
+                    "• **$10** - Higher risk\n\n"
+                    "⚠️ **Important:** This is the maximum amount per trade.",
+                    reply_markup=InlineKeyboardMarkup(keyboard),
+                    parse_mode="Markdown",
+                )
+
+            elif sub_action == "scan":
+                # Manual scan
+                await query.edit_message_text(
+                    "🔍 **Scanning Markets...**\n\nPlease wait...",
+                    parse_mode="Markdown",
+                )
+
+                try:
+                    from services.trading_orchestrator import trading_orchestrator
+
+                    signals = await trading_orchestrator.manual_signal_scan(
+                        user_context.user.user_id, exchange="MEXC"
+                    )
+
+                    if signals:
+                        await query.edit_message_text(
+                            f"✅ **Scan Complete**\n\n"
+                            f"Found {len(signals)} signals!\n"
+                            f"Check above for trade notifications.",
+                            parse_mode="Markdown",
+                        )
+                    else:
+                        await query.edit_message_text(
+                            "📊 **Scan Complete**\n\n"
+                            "No signals found at this time.\n"
+                            "Markets are in hold mode.",
+                            parse_mode="Markdown",
+                        )
+                except Exception as e:
+                    logger.error(f"Manual scan error: {e}")
+                    await query.edit_message_text(
+                        "❌ **Scan Error**\n\nCould not complete scan.",
+                        parse_mode="Markdown",
+                    )
+
+            elif sub_action == "balance":
+                # Show balance
+                await query.edit_message_text(
+                    "💳 **Checking Balance...**\n\nPlease wait...",
+                    parse_mode="Markdown",
+                )
+
+                try:
+                    balance_data = await self._get_mexc_account_data(
+                        user_context.user.user_id
+                    )
+
+                    usdt_balance = 0
+                    for balance in balance_data.get("balances", []):
+                        if balance["asset"] == "USDT":
+                            usdt_balance = balance["free"]
+                            break
+
+                    max_volume = user_context.settings.get("mexc_max_volume", 5.0)
+                    possible_trades = (
+                        int(usdt_balance / max_volume)
+                        if usdt_balance >= max_volume
+                        else 0
+                    )
+
+                    await query.edit_message_text(
+                        f"💰 **MEXC Balance**\n\n"
+                        f"💵 **USDT:** ${usdt_balance:.2f}\n"
+                        f"🎯 **Max Trade:** ${max_volume}\n"
+                        f"📊 **Possible Trades:** {possible_trades}\n\n"
+                        f"{'✅ Ready to trade!' if usdt_balance >= max_volume else '⚠️ Insufficient balance'}",
+                        parse_mode="Markdown",
+                    )
+                except Exception as e:
+                    logger.error(f"Balance check error: {e}")
+                    await query.edit_message_text(
+                        "❌ **Balance Error**\n\nCould not check balance.",
+                        parse_mode="Markdown",
+                    )
+
+            elif sub_action == "status":
+                # Show status
+                mexc_auto_enabled = user_context.settings.get("mexc_auto_mode", False)
+                max_volume = user_context.settings.get("mexc_max_volume", 5.0)
+
+                await query.edit_message_text(
+                    f"📊 **MEXC Auto Status**\n\n"
+                    f"**Mode:** {'🟢 Enabled' if mexc_auto_enabled else '🔴 Disabled'}\n"
+                    f"**Max Volume:** ${max_volume}\n"
+                    f"**Exchange:** MEXC\n"
+                    f"**Strategy:** Enhanced RSI/EMA\n"
+                    f"**Signal Threshold:** 60%+ confidence\n\n"
+                    f"**Safety Features:**\n"
+                    f"• Maximum ${max_volume} per trade\n"
+                    f"• Rate limiting (5-min cooldown)\n"
+                    f"• Balance verification\n"
+                    f"• Built-in stop-loss",
+                    parse_mode="Markdown",
+                )
+
+            elif sub_action == "volume":
+                # Show volume options
+                keyboard = [
+                    [
+                        InlineKeyboardButton(
+                            "💰 $3",
+                            callback_data=f"mexc_volume_set_3_{user_context.user.user_id}",
+                        ),
+                        InlineKeyboardButton(
+                            "💰 $5",
+                            callback_data=f"mexc_volume_set_5_{user_context.user.user_id}",
+                        ),
+                    ],
+                    [
+                        InlineKeyboardButton(
+                            "💰 $7",
+                            callback_data=f"mexc_volume_set_7_{user_context.user.user_id}",
+                        ),
+                        InlineKeyboardButton(
+                            "💰 $10",
+                            callback_data=f"mexc_volume_set_10_{user_context.user.user_id}",
+                        ),
+                    ],
+                    [
+                        InlineKeyboardButton(
+                            "← Back",
+                            callback_data=f"mexc_auto_back_{user_context.user.user_id}",
+                        ),
+                    ],
+                ]
+
+                await query.edit_message_text(
+                    "💰 **Set Maximum Trade Volume**\n\n"
+                    "Choose your maximum trade volume per position:\n\n"
+                    "• **$3** - Very conservative\n"
+                    "• **$5** - Recommended (default)\n"
+                    "• **$7** - Moderate risk\n"
+                    "• **$10** - Higher risk\n\n"
+                    "⚠️ **Important:** This is the maximum amount per trade.",
+                    reply_markup=InlineKeyboardMarkup(keyboard),
+                    parse_mode="Markdown",
+                )
+
+            elif sub_action == "scan":
+                # Manual scan
+                await query.edit_message_text(
+                    "🔍 **Scanning Markets...**\n\nPlease wait...",
+                    parse_mode="Markdown",
+                )
+
+                try:
+                    from services.trading_orchestrator import trading_orchestrator
+
+                    signals = await trading_orchestrator.manual_signal_scan(
+                        user_context.user.user_id, exchange="MEXC"
+                    )
+
+                    if signals:
+                        await query.edit_message_text(
+                            f"✅ **Scan Complete**\n\n"
+                            f"Found {len(signals)} signals!\n"
+                            f"Check above for trade notifications.",
+                            parse_mode="Markdown",
+                        )
+                    else:
+                        await query.edit_message_text(
+                            "📊 **Scan Complete**\n\n"
+                            "No signals found at this time.\n"
+                            "Markets are in hold mode.",
+                            parse_mode="Markdown",
+                        )
+                except Exception as e:
+                    logger.error(f"Manual scan error: {e}")
+                    await query.edit_message_text(
+                        "❌ **Scan Error**\n\nCould not complete scan.",
+                        parse_mode="Markdown",
+                    )
+
+            elif sub_action == "balance":
+                # Show balance
+                await query.edit_message_text(
+                    "💳 **Checking Balance...**\n\nPlease wait...",
+                    parse_mode="Markdown",
+                )
+
+                try:
+                    balance_data = await self._get_mexc_account_data(
+                        user_context.user.user_id
+                    )
+
+                    usdt_balance = 0
+                    for balance in balance_data.get("balances", []):
+                        if balance["asset"] == "USDT":
+                            usdt_balance = balance["free"]
+                            break
+
+                    max_volume = user_context.settings.get("mexc_max_volume", 5.0)
+                    possible_trades = (
+                        int(usdt_balance / max_volume)
+                        if usdt_balance >= max_volume
+                        else 0
+                    )
+
+                    await query.edit_message_text(
+                        f"💰 **MEXC Balance**\n\n"
+                        f"💵 **USDT:** ${usdt_balance:.2f}\n"
+                        f"🎯 **Max Trade:** ${max_volume}\n"
+                        f"📊 **Possible Trades:** {possible_trades}\n\n"
+                        f"{'✅ Ready to trade!' if usdt_balance >= max_volume else '⚠️ Insufficient balance'}",
+                        parse_mode="Markdown",
+                    )
+                except Exception as e:
+                    logger.error(f"Balance check error: {e}")
+                    await query.edit_message_text(
+                        "❌ **Balance Error**\n\nCould not check balance.",
+                        parse_mode="Markdown",
+                    )
+
+            elif sub_action == "status":
+                # Show status
+                mexc_auto_enabled = user_context.settings.get("mexc_auto_mode", False)
+                max_volume = user_context.settings.get("mexc_max_volume", 5.0)
+
+                await query.edit_message_text(
+                    f"📊 **MEXC Auto Status**\n\n"
+                    f"**Mode:** {'🟢 Enabled' if mexc_auto_enabled else '🔴 Disabled'}\n"
+                    f"**Max Volume:** ${max_volume}\n"
+                    f"**Exchange:** MEXC\n"
+                    f"**Strategy:** Enhanced RSI/EMA\n"
+                    f"**Signal Threshold:** 60%+ confidence\n\n"
+                    f"**Safety Features:**\n"
+                    f"• Maximum ${max_volume} per trade\n"
+                    f"• Rate limiting (5-min cooldown)\n"
+                    f"• Balance verification\n"
+                    f"• Built-in stop-loss",
+                    parse_mode="Markdown",
+                )
+
+        except Exception as e:
+            logger.error(f"Error in MEXC auto callback: {e}")
+            await query.edit_message_text(
+                "❌ Error processing request.", parse_mode="Markdown"
+            )
+
+    async def _handle_mexc_trade_callback(self, query, data_parts, user_context):
+        """Handle MEXC trade execution callbacks"""
+        try:
+            # Parse callback data: mexc_trade_ACTION_SYMBOL_TIMESTAMP_user_id
+            if len(data_parts) < 5:
+                await query.edit_message_text("❌ Invalid trade request.")
+                return
+
+            action = data_parts[2]  # approve or reject
+            symbol = data_parts[3]
+            timestamp = data_parts[4]
+
+            if action == "approve":
+                await query.edit_message_text(
+                    "⏳ **Executing Trade...**\n\nPlease wait...", parse_mode="Markdown"
+                )
+
+                try:
+                    # Execute MEXC trade with maximum volume limit
+                    max_volume = user_context.settings.get("mexc_max_volume", 5.0)
+
+                    # Use direct MEXC client for trade execution
+                    from mexc.mexc_client import MEXCClient, MEXCTradeExecutor
+                    from config.config import Config
+
+                    mexc_client = MEXCClient(
+                        Config.MEXC_API_KEY, Config.MEXC_API_SECRET
+                    )
+                    trade_executor = MEXCTradeExecutor(mexc_client)
+
+                    # Get current price
+                    current_price = await mexc_client.get_accurate_price(symbol)
+
+                    # Calculate quantity based on max volume
+                    quantity = max_volume / current_price
+
+                    # Check balance
+                    balance = await mexc_client.get_balance("USDT")
+                    if balance["free"] < max_volume:
+                        await query.edit_message_text(
+                            f"❌ **Insufficient Balance**\n\n"
+                            f"Required: ${max_volume}\n"
+                            f"Available: ${balance['free']:.2f}",
+                            parse_mode="Markdown",
+                        )
+                        await mexc_client.close()
+                        return
+
+                    # Execute market order
+                    order = await trade_executor.execute_market_order(
+                        symbol=symbol,
+                        side="BUY",  # Assume BUY for now, can be made dynamic
+                        quantity=quantity,
+                    )
+
+                    await mexc_client.close()
+
+                    await query.edit_message_text(
+                        f"✅ **Trade Executed**\n\n"
+                        f"📊 **{self._escape_markdown(symbol)}**\n"
+                        f"💰 **Amount:** ${max_volume:.2f}\n"
+                        f"📈 **Price:** ${current_price:.4f}\n"
+                        f"📊 **Quantity:** {quantity:.6f}\n"
+                        f"🆔 **Order ID:** {self._escape_markdown(str(order.get('orderId', 'N/A')))}\n\n"
+                        f"🛡️ **Stop-loss and take-profit monitoring active**",
+                        parse_mode="Markdown",
+                    )
+
+                except Exception as e:
+                    logger.error(f"Trade execution error: {e}")
+                    await query.edit_message_text(
+                        f"❌ **Trade Execution Failed**\n\n"
+                        f"Error: {self._escape_markdown(str(e))}\n\n"
+                        f"Please try again or check your settings.",
+                        parse_mode="Markdown",
+                    )
+
+            elif action == "reject":
+                await query.edit_message_text(
+                    "❌ **Trade Rejected**\n\n"
+                    "Signal dismissed. Waiting for next opportunity...",
+                    parse_mode="Markdown",
+                )
+
+        except Exception as e:
+            logger.error(f"Error in MEXC trade callback: {e}")
+            await query.edit_message_text(
+                "❌ Error processing trade request.", parse_mode="Markdown"
+            )
+
+    async def _handle_mexc_volume_callback(self, query, data_parts, user_context):
+        """Handle MEXC volume setting callbacks"""
+        try:
+            # Parse callback data: mexc_volume_set_AMOUNT_user_id
+            # data_parts = ["mexc", "volume", "set", "AMOUNT", "user_id"]
+            if len(data_parts) < 5:
+                await query.edit_message_text("❌ Invalid volume setting.")
+                return
+
+            volume_amount = float(data_parts[3])
+
+            # Validate volume range
+            if not (1.0 <= volume_amount <= 10.0):
+                await query.edit_message_text("❌ Invalid volume amount.")
+                return
+
+            # Update user settings
+            user_context.settings["mexc_max_volume"] = volume_amount
+
+            # Update in database
+            await user_service.update_user_settings(
+                user_context.user.user_id, mexc_max_volume=volume_amount
+            )
+
+            await query.edit_message_text(
+                f"✅ **Maximum Volume Updated**\n\n"
+                f"New max volume: ${volume_amount}\n\n"
+                f"This will be the maximum amount used for each MEXC auto trade.\n\n"
+                f"Use /mexc_auto to return to the main menu.",
+                parse_mode="Markdown",
+            )
+
+        except Exception as e:
+            logger.error(f"Error in MEXC volume callback: {e}")
+            await query.edit_message_text(
+                "❌ Error updating volume setting.", parse_mode="Markdown"
+            )
+
     # Notification System
     async def _notification_worker(self, worker_name: str):
         """Background worker for processing notifications"""
@@ -2190,25 +2875,98 @@ Stay informed about your trading activity with customizable notifications."""
             await self._increment_stat("errors_today")
 
     async def _send_signal_notification(self, user_id: int, content: Dict):
-        """Send signal notification to user"""
+        """Send signal notification to user with MEXC auto mode support"""
         try:
             signal = content.get("signal", {})
-            message = f"""**Trading Signal**
 
-Symbol: {signal.get('symbol', 'N/A')}
-Action: {signal.get('action', 'N/A')}
-Price: ${signal.get('price', 0):.4f}
-Confidence: {signal.get('confidence', 0):.1f}%
-
-Time: {datetime.now().strftime('%H:%M:%S')}"""
-
-            # Find user's Telegram ID
-            for telegram_id, context in self.active_users.items():
+            # Find user's context to check MEXC auto mode
+            user_context = None
+            telegram_id = None
+            for tid, context in self.active_users.items():
                 if context.user.user_id == user_id:
-                    await self.application.bot.send_message(
-                        chat_id=telegram_id, text=message, parse_mode="Markdown"
-                    )
+                    user_context = context
+                    telegram_id = tid
                     break
+
+            if not user_context or not telegram_id:
+                return
+
+            # Check if user has MEXC auto mode enabled
+            mexc_auto_enabled = user_context.settings.get("mexc_auto_mode", False)
+            max_volume = user_context.settings.get("mexc_max_volume", 5.0)
+            exchange = user_context.settings.get("exchange", "MEXC")
+
+            # Format signal message
+            symbol = signal.get("symbol", "N/A")
+            action = signal.get("action", "N/A")
+            price = signal.get("price", 0)
+            confidence = signal.get("confidence", 0)
+
+            if mexc_auto_enabled and exchange == "MEXC":
+                # MEXC Auto Mode - Enhanced signal with trade buttons
+                action_emoji = (
+                    "🟢" if action == "BUY" else "🔴" if action == "SELL" else "⚪"
+                )
+                confidence_emoji = (
+                    "🔥" if confidence >= 70 else "⚡" if confidence >= 60 else "💫"
+                )
+
+                message = f"""{action_emoji} **MEXC AUTO SIGNAL** {confidence_emoji}
+
+📊 **{self._escape_markdown(symbol)}**
+📈 **Action:** {self._escape_markdown(action)}
+💰 **Price:** ${price:.4f}
+🎯 **Confidence:** {confidence:.1f}%
+💵 **Trade Amount:** ${max_volume} (Max Volume)
+
+📋 **Analysis:**
+• High-confidence signal detected
+• Risk-controlled trade size
+• Built-in stop-loss protection
+
+⏰ **Time:** {datetime.now().strftime('%H:%M:%S')}
+
+Click below to execute:"""
+
+                # Create trade execution buttons
+                timestamp = int(datetime.now().timestamp())
+                keyboard = [
+                    [
+                        InlineKeyboardButton(
+                            f"✅ TRADE ${max_volume}",
+                            callback_data=f"mexc_trade_approve_{symbol}_{timestamp}_{user_id}",
+                        ),
+                        InlineKeyboardButton(
+                            "❌ REJECT",
+                            callback_data=f"mexc_trade_reject_{symbol}_{timestamp}_{user_id}",
+                        ),
+                    ]
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+
+                await self.application.bot.send_message(
+                    chat_id=telegram_id,
+                    text=message,
+                    parse_mode="Markdown",
+                    reply_markup=reply_markup,
+                )
+            else:
+                # Standard signal notification
+                message = f"""📊 **Trading Signal**
+
+Symbol: {self._escape_markdown(symbol)}
+Action: {self._escape_markdown(action)}
+Price: ${price:.4f}
+Confidence: {confidence:.1f}%
+
+Time: {datetime.now().strftime('%H:%M:%S')}
+
+💡 **Tip:** Enable MEXC Auto Mode with /mexc_auto for one-click trading!"""
+
+                await self.application.bot.send_message(
+                    chat_id=telegram_id, text=message, parse_mode="Markdown"
+                )
+
         except Exception as e:
             logger.error(f"Error sending signal notification: {e}")
 

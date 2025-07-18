@@ -43,6 +43,17 @@ class Config:
 
     # Strategy Settings
     ACTIVE_STRATEGY = "ENHANCED_RSI_EMA"  # Default to enhanced strategy
+
+    # Supported Strategies
+    SUPPORTED_STRATEGIES = [
+        "RSI_EMA",
+        "ENHANCED_RSI_EMA",
+        "VISHVA_ML",
+        "MACD",
+        "BOLLINGER",
+        "FOREX",
+    ]
+
     RSI_PERIOD = 14
     RSI_OVERSOLD = 35  # Enhanced strategy uses 40, but keep config for flexibility
     RSI_OVERBOUGHT = 65  # Enhanced strategy uses 60, but keep config for flexibility
@@ -58,7 +69,7 @@ class Config:
     # Data Feed Settings
     WEBSOCKET_RECONNECT_DELAY = 5
     KLINE_INTERVAL = "1m"  # For real-time updates
-    SIGNAL_CHECK_INTERVAL = 300  # Check for signals every 5 minutes (300 seconds)
+    SIGNAL_CHECK_INTERVAL = 900  # Check for signals every 15 minutes (900 seconds)
 
     # Logging
     LOG_LEVEL = "INFO"
@@ -66,6 +77,12 @@ class Config:
 
     # Performance Tracking
     PERFORMANCE_REPORT_TIME = "18:00"  # Daily report time
+
+    # ML Strategy Configuration
+    ML_MODEL_PATH = "models/vishva_ml"
+    ML_RETRAIN_INTERVAL_DAYS = 7
+    ML_MIN_CONFIDENCE = 0.6
+    ML_FEATURE_LOOKBACK = 200
 
     @classmethod
     def validate(cls):

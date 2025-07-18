@@ -36,10 +36,17 @@ class RealMarketDataService:
         self.running = False
         self.initialized = False
 
+        # Signal rate limiting - prevent overwhelming users
+        self.last_signal_time = {}  # Track last signal time per symbol
+        self.signal_cooldown_seconds = getattr(
+            Config, "SIGNAL_CHECK_INTERVAL", 300
+        )  # 5 minutes default
+
         # Performance tracking
         self.stats = {
             "data_updates": 0,
             "signals_generated": 0,
+            "signals_throttled": 0,
             "errors": 0,
             "start_time": None,
         }
@@ -185,18 +192,40 @@ class RealMarketDataService:
                     "data_source": "mexc_realtime",
                 }
 
-                # Send to trading orchestrator
-                signals = await trading_orchestrator.process_market_signal(
-                    symbol, market_data
-                )
+                # Rate limiting: Only process signals if enough time has passed
+                current_time = datetime.now()
+                last_signal_time = self.last_signal_time.get(symbol)
 
-                # Update statistics
-                self.stats["data_updates"] += 1
-                if signals:
-                    self.stats["signals_generated"] += len(signals)
-                    logger.info(
-                        f"📊 {symbol}: Generated {len(signals)} signals @ ${self.latest_prices[symbol]:,.4f}"
+                if (
+                    last_signal_time is None
+                    or (current_time - last_signal_time).total_seconds()
+                    >= self.signal_cooldown_seconds
+                ):
+
+                    # Send to trading orchestrator
+                    signals = await trading_orchestrator.process_market_signal(
+                        symbol, market_data
                     )
+
+                    # Update statistics
+                    if signals:
+                        self.stats["signals_generated"] += len(signals)
+                        self.last_signal_time[symbol] = current_time
+                        logger.info(
+                            f"📊 {symbol}: Generated {len(signals)} signals @ ${self.latest_prices[symbol]:,.4f}"
+                        )
+                else:
+                    # Signal throttled
+                    self.stats["signals_throttled"] += 1
+                    time_remaining = (
+                        self.signal_cooldown_seconds
+                        - (current_time - last_signal_time).total_seconds()
+                    )
+                    logger.debug(
+                        f"📊 {symbol}: Signal throttled, {time_remaining:.0f}s remaining"
+                    )
+
+                self.stats["data_updates"] += 1
 
         except Exception as e:
             logger.error(f"Error processing kline update for {symbol}: {e}")

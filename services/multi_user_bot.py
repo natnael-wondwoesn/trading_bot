@@ -2312,6 +2312,157 @@ Time: {datetime.now().strftime('%H:%M:%S')}"""
 
         logger.info(f"Broadcasted message to {len(target_users)} users")
 
+    async def broadcast_signal_to_all_users(self, signal_data: Dict):
+        """Broadcast trading signal to all active users"""
+        try:
+            if not self.active_users:
+                logger.info("No active users to send signals to")
+                return 0
+
+            # Format the signal message
+            symbol = signal_data.get("symbol", "N/A")
+            action = signal_data.get("action", "N/A")
+            price = signal_data.get("price", 0)
+            confidence = signal_data.get("confidence", 0)
+            stop_loss = signal_data.get("stop_loss")
+            take_profit = signal_data.get("take_profit")
+
+            # Action emoji
+            action_emoji = (
+                "🟢" if action == "BUY" else "🔴" if action == "SELL" else "⚪"
+            )
+
+            # Confidence level emoji
+            if confidence >= 70:
+                confidence_emoji = "🔥"
+            elif confidence >= 60:
+                confidence_emoji = "⚡"
+            else:
+                confidence_emoji = "💫"
+
+            message = f"""{action_emoji} **TRADING SIGNAL** {confidence_emoji}
+
+📊 **{symbol}**
+🎯 **Action:** {action}
+💰 **Price:** ${price:.4f}
+📈 **Confidence:** {confidence:.1f}%"""
+
+            if stop_loss:
+                message += f"\n🛡️ **Stop Loss:** ${stop_loss:.4f}"
+            if take_profit:
+                message += f"\n🎯 **Take Profit:** ${take_profit:.4f}"
+
+            message += f"\n\n⏰ **Time:** {datetime.now().strftime('%H:%M:%S')}"
+            message += f"\n\n_From Enhanced Strategy System_"
+
+            # Send to all active users
+            sent_count = 0
+            failed_count = 0
+
+            logger.info(
+                f"Broadcasting {symbol} {action} signal to {len(self.active_users)} active users"
+            )
+
+            for telegram_id, context in self.active_users.items():
+                try:
+                    # Retry logic for network errors
+                    max_retries = 3
+                    retry_delay = 1.0
+
+                    for attempt in range(max_retries):
+                        try:
+                            await self.application.bot.send_message(
+                                chat_id=telegram_id, text=message, parse_mode="Markdown"
+                            )
+                            sent_count += 1
+                            logger.debug(f"✅ Signal sent to user {telegram_id}")
+                            break  # Success, exit retry loop
+
+                        except (TelegramError, Exception) as send_error:
+                            # Check if this is the last attempt
+                            if attempt == max_retries - 1:
+                                raise send_error
+
+                            # Log retry attempt
+                            logger.debug(
+                                f"Retry {attempt + 1}/{max_retries} for user {telegram_id}: {send_error}"
+                            )
+
+                            # Wait before retry with exponential backoff
+                            await asyncio.sleep(retry_delay * (attempt + 1))
+
+                    # Small delay to avoid rate limiting
+                    await asyncio.sleep(0.1)
+
+                except Forbidden:
+                    # User blocked the bot - remove from active users
+                    logger.info(
+                        f"User {telegram_id} blocked the bot, removing from active users"
+                    )
+                    self.active_users.pop(telegram_id, None)
+                    failed_count += 1
+
+                except BadRequest as br_error:
+                    # Invalid chat_id or other bad request
+                    logger.warning(f"Bad request for user {telegram_id}: {br_error}")
+                    failed_count += 1
+
+                except TelegramError as tg_error:
+                    # Other Telegram API errors
+                    error_msg = str(tg_error).lower()
+                    if (
+                        "network" in error_msg
+                        or "timeout" in error_msg
+                        or "connection" in error_msg
+                    ):
+                        logger.warning(
+                            f"Network error sending to user {telegram_id}: {tg_error}"
+                        )
+                        self._network_retry_count += 1
+                    else:
+                        logger.error(
+                            f"Telegram error for user {telegram_id}: {tg_error}"
+                        )
+                    failed_count += 1
+
+                except Exception as user_error:
+                    logger.error(
+                        f"Unexpected error sending to user {telegram_id}: {user_error}"
+                    )
+                    failed_count += 1
+
+            logger.info(
+                f"📱 Signal broadcast complete: {sent_count} sent, {failed_count} failed"
+            )
+            return sent_count
+
+        except Exception as e:
+            logger.error(f"Error broadcasting signal to all users: {e}")
+            return 0
+
+    async def send_signal_to_all_users(self, signal_info):
+        """Simple method to send signal to all users (compatible with existing code)"""
+        try:
+            # Convert signal_info to the format expected by broadcast_signal_to_all_users
+            signal_data = {
+                "symbol": signal_info.get("symbol", "UNKNOWN"),
+                "action": signal_info.get("action", "HOLD"),
+                "price": signal_info.get("price", 0),
+                "confidence": (
+                    signal_info.get("confidence", 0) * 100
+                    if signal_info.get("confidence", 0) <= 1
+                    else signal_info.get("confidence", 0)
+                ),
+                "stop_loss": signal_info.get("stop_loss"),
+                "take_profit": signal_info.get("take_profit"),
+            }
+
+            return await self.broadcast_signal_to_all_users(signal_data)
+
+        except Exception as e:
+            logger.error(f"Error in send_signal_to_all_users: {e}")
+            return 0
+
     # Maintenance and Monitoring
     async def _maintenance_task(self):
         """Regular maintenance tasks"""

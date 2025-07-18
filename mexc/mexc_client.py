@@ -19,44 +19,33 @@ class MEXCClient:
     BASE_URL = "https://api.mexc.com"
     WS_URL = "wss://wbs.mexc.com/ws"
 
-    # MEXC interval mapping for HTTP API (uppercase format)
-        # MEXC interval mapping for HTTP API (correct format)
-        # MEXC interval mapping for HTTP API (correct format based on testing)
+    # MEXC interval mapping for HTTP API (MEXC official intervals - TESTED AND VERIFIED)
     HTTP_INTERVAL_MAP = {
         "1m": "1m",
-        "3m": "3m",
-        "5m": "5m", 
+        "5m": "5m",
         "15m": "15m",
         "30m": "30m",
-        "1h": "1h",
-        "1H": "1h",  # Normalize to lowercase
-        "2h": "2h",
-        "4h": "4h", 
-        "6h": "6h",
-        "8h": "8h",
-        "12h": "12h",
+        "60m": "60m",  # MEXC uses 60m, NOT 1h!
+        "1h": "60m",  # Map 1h to 60m for compatibility
+        "4h": "4h",
         "1d": "1d",
-        "3d": "3d",
-        "1w": "1w",
-        "1M": "1M",  # Monthly is uppercase
+        "1w": "1W",  # MEXC uses uppercase 1W, NOT lowercase 1w!
+        "1W": "1W",  # Native format
+        "1M": "1M",
     }
 
     # MEXC interval mapping for WebSocket API (Min/Hour format)
     WS_INTERVAL_MAP = {
         "1m": "Min1",
-        "3m": "Min3",
         "5m": "Min5",
         "15m": "Min15",
         "30m": "Min30",
-        "1h": "Min60",
-        "2h": "Min120",
+        "60m": "Min60",  # 60 minute
+        "1h": "Min60",  # 1 hour maps to 60 minutes
         "4h": "Hour4",
-        "6h": "Hour6",
-        "8h": "Hour8",
-        "12h": "Hour12",
         "1d": "Day1",
-        "3d": "Day3",
-        "1w": "Week1",
+        "1w": "Week1",  # Map to Week1
+        "1W": "Week1",  # Native format maps to Week1
         "1M": "Month1",
     }
 
@@ -103,7 +92,7 @@ class MEXCClient:
                 if response.status != 200:
                     logger.error(f"API Error: {data}")
                     # Handle specific interval error
-                    if isinstance(data, dict) and data.get('code') == -1121:
+                    if isinstance(data, dict) and data.get("code") == -1121:
                         error_msg = f"Invalid interval error for {params.get('interval', 'unknown')}"
                         logger.error(error_msg)
                         raise ValueError(error_msg)
@@ -138,23 +127,25 @@ class MEXCClient:
         return await self._request("GET", "/api/v3/trades", params, signed=False)
 
     async def get_klines(
-        self, symbol: str, interval: str = "1h", limit: int = 100
+        self, symbol: str, interval: str = "60m", limit: int = 100
     ) -> pd.DataFrame:
         """Get candlestick data"""
         # Convert interval to MEXC format with validation
-        mexc_interval = self.HTTP_INTERVAL_MAP.get(interval, "1h")  # Default to 1h
-        
-        # Validate interval is supported
-        valid_intervals = ["1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "8h", "12h", "1d", "3d", "1w", "1M"]
+        mexc_interval = self.HTTP_INTERVAL_MAP.get(
+            interval, "60m"
+        )  # Default to 60m (MEXC format)
+
+        # Validate interval is supported - UPDATED WITH TESTED INTERVALS
+        valid_intervals = ["1m", "5m", "15m", "30m", "60m", "4h", "1d", "1W", "1M"]
         if mexc_interval not in valid_intervals:
-            logger.warning(f"Invalid interval {interval}, using 1h")
-            mexc_interval = "1h"
+            logger.warning(f"Invalid interval {interval}, using 60m")
+            mexc_interval = "60m"
 
         params = {"symbol": symbol, "interval": mexc_interval, "limit": limit}
-        
+
         logger.debug(f"MEXC klines request: {params}")
 
-        data = await self._request("GET", "/api/v3/klines", params, signed=False)
+        data = await self._request("GET", "/api/v3/klines", params, signed=True)
 
         # Log the actual response structure for debugging
         logger.info(f"Klines response structure for {symbol}: {len(data)} rows")
@@ -324,17 +315,16 @@ class MEXCClient:
                 logger.info("WebSocket closed")
                 break
 
-    
     async def get_accurate_price(self, symbol: str) -> float:
         """Get accurate real-time price with high precision"""
         try:
             # Use price ticker endpoint for most accurate price
             url = f"{self.BASE_URL}/api/v3/ticker/price"
             params = {"symbol": symbol}
-            
+
             if not self.session:
                 self.session = aiohttp.ClientSession()
-            
+
             async with self.session.get(url, params=params) as response:
                 if response.status == 200:
                     data = await response.json()
@@ -344,7 +334,7 @@ class MEXCClient:
                     # Fallback to 24hr ticker
                     ticker = await self.get_ticker(symbol)
                     return round(float(ticker["lastPrice"]), 4)
-                    
+
         except Exception as e:
             logger.error(f"Error getting accurate price for {symbol}: {e}")
             # Final fallback to regular ticker

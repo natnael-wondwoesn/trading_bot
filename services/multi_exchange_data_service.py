@@ -48,11 +48,18 @@ class MultiExchangeDataService:
         self.running = False
         self.initialized = False
 
+        # Signal rate limiting - prevent overwhelming users
+        self.last_signal_time = {}  # Track last signal time per symbol per exchange
+        self.signal_cooldown_seconds = getattr(
+            Config, "SIGNAL_CHECK_INTERVAL", 300
+        )  # 5 minutes default
+
         # Performance tracking
         self.stats = {
             "mexc_updates": 0,
             "bybit_updates": 0,
             "signals_generated": 0,
+            "signals_throttled": 0,
             "errors": 0,
             "start_time": None,
         }
@@ -357,15 +364,41 @@ class MultiExchangeDataService:
                     "data_source": "mexc_realtime",
                 }
 
-                # Send to trading orchestrator
-                signals = await trading_orchestrator.process_market_signal(
-                    symbol, market_data
-                )
+                # Rate limiting: Only process signals if enough time has passed
+                current_time = datetime.now()
+                signal_key = f"MEXC_{symbol}"
+                last_signal_time = self.last_signal_time.get(signal_key)
 
-                # Update statistics
+                if (
+                    last_signal_time is None
+                    or (current_time - last_signal_time).total_seconds()
+                    >= self.signal_cooldown_seconds
+                ):
+
+                    # Send to trading orchestrator
+                    signals = await trading_orchestrator.process_market_signal(
+                        symbol, market_data
+                    )
+
+                    # Update statistics
+                    if signals:
+                        self.stats["signals_generated"] += len(signals)
+                        self.last_signal_time[signal_key] = current_time
+                        logger.debug(
+                            f"📊 MEXC {symbol}: Generated {len(signals)} signals"
+                        )
+                else:
+                    # Signal throttled
+                    self.stats["signals_throttled"] += 1
+                    time_remaining = (
+                        self.signal_cooldown_seconds
+                        - (current_time - last_signal_time).total_seconds()
+                    )
+                    logger.debug(
+                        f"📊 MEXC {symbol}: Signal throttled, {time_remaining:.0f}s remaining"
+                    )
+
                 self.stats["mexc_updates"] += 1
-                if signals:
-                    self.stats["signals_generated"] += len(signals)
 
         except Exception as e:
             logger.error(f"Error processing MEXC kline update for {symbol}: {e}")

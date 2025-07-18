@@ -1,0 +1,2144 @@
+{
+  "test_timestamp": "2025-07-18T11:15:04.429509",
+  "working_intervals": [
+    "15m",
+    "1M",
+    "1W",
+    "1d",
+    "1m",
+    "30m",
+    "4h",
+    "5m",
+    "60m",
+    "8h"
+  ],
+  "working_pairs": [
+    "ADAUSDT",
+    "AVAXUSDT",
+    "BNBUSDT",
+    "BTCUSDT",
+    "DOGEUSDT",
+    "ETHUSDT",
+    "LINKUSDT",
+    "SOLUSDT",
+    "XRPUSDT"
+  ],
+  "detailed_results": {
+    "1m": {
+      "BTCUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752826140000,
+          "119299.99",
+          "119300",
+          "119192.95",
+          "119210.83",
+          "4.23510969",
+          1752826200000,
+          "505126.35"
+        ]
+      },
+      "ETHUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752826140000,
+          "3622.21",
+          "3622.22",
+          "3613.94",
+          "3615.79",
+          "149.53891",
+          1752826200000,
+          "540875.47"
+        ]
+      },
+      "ADAUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752826140000,
+          "0.8611",
+          "0.8614",
+          "0.8595",
+          "0.8597",
+          "110244.13",
+          1752826200000,
+          "94835.0414"
+        ]
+      },
+      "DOGEUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752826140000,
+          "0.24097",
+          "0.241",
+          "0.24015",
+          "0.24037",
+          "1067246.95",
+          1752826200000,
+          "256567.07399"
+        ]
+      },
+      "BNBUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752826140000,
+          "739.31",
+          "739.31",
+          "738.17",
+          "738.35",
+          "149.1171",
+          1752826200000,
+          "110161.94"
+        ]
+      },
+      "SOLUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752826140000,
+          "181.68",
+          "181.68",
+          "181.24",
+          "181.29",
+          "691.77",
+          1752826200000,
+          "125487.69"
+        ]
+      },
+      "XRPUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752826140000,
+          "3.4936",
+          "3.4991",
+          "3.4914",
+          "3.4946",
+          "111289.37",
+          1752826200000,
+          "388929.0036"
+        ]
+      },
+      "AVAXUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752826140000,
+          "24.51",
+          "24.51",
+          "24.45",
+          "24.46",
+          "1419.88",
+          1752826200000,
+          "34757.09"
+        ]
+      },
+      "LINKUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752826140000,
+          "18.67",
+          "18.68",
+          "18.6",
+          "18.6",
+          "8508.69",
+          1752826200000,
+          "158538.17"
+        ]
+      }
+    },
+    "5m": {
+      "BTCUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752825000000,
+          "119735.21",
+          "119748.41",
+          "119420.01",
+          "119477.99",
+          "25.05613255",
+          1752825300000,
+          "2995698.1"
+        ]
+      },
+      "ETHUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752825000000,
+          "3623.44",
+          "3625.53",
+          "3612.39",
+          "3614.91",
+          "1077.77311",
+          1752825300000,
+          "3899663.55"
+        ]
+      },
+      "ADAUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752825000000,
+          "0.8651",
+          "0.8658",
+          "0.8554",
+          "0.8554",
+          "1279119.02",
+          1752825300000,
+          "1098035.497"
+        ]
+      },
+      "DOGEUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752825000000,
+          "0.24137",
+          "0.24157",
+          "0.23914",
+          "0.2398",
+          "8866799.99",
+          1752825300000,
+          "2129347.00787"
+        ]
+      },
+      "BNBUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752825000000,
+          "740.54",
+          "740.91",
+          "739.97",
+          "740.47",
+          "2358.6043",
+          1752825300000,
+          "1745769.72"
+        ]
+      },
+      "SOLUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752825000000,
+          "182.69",
+          "182.78",
+          "181.59",
+          "181.62",
+          "6607.97",
+          1752825300000,
+          "1202877.76"
+        ]
+      },
+      "XRPUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752825000000,
+          "3.5005",
+          "3.503",
+          "3.461",
+          "3.4669",
+          "744146.74",
+          1752825300000,
+          "2592375.3223"
+        ]
+      },
+      "AVAXUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752825000000,
+          "24.57",
+          "24.59",
+          "24.39",
+          "24.4",
+          "13822.93",
+          1752825300000,
+          "338202.83"
+        ]
+      },
+      "LINKUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752825000000,
+          "18.64",
+          "18.67",
+          "18.53",
+          "18.54",
+          "13087.57",
+          1752825300000,
+          "243116.35"
+        ]
+      }
+    },
+    "15m": {
+      "BTCUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752822000000,
+          "120251",
+          "120386.27",
+          "120010",
+          "120062.68",
+          "44.31312424",
+          1752822900000,
+          "5326017.26"
+        ]
+      },
+      "ETHUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752822000000,
+          "3650.73",
+          "3669",
+          "3634.28",
+          "3640.31",
+          "2545.10058",
+          1752822900000,
+          "9293252.92"
+        ]
+      },
+      "ADAUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752822000000,
+          "0.878",
+          "0.8953",
+          "0.878",
+          "0.8817",
+          "6301641.72",
+          1752822900000,
+          "5586893.4661"
+        ]
+      },
+      "DOGEUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752822000000,
+          "0.24561",
+          "0.24644",
+          "0.24319",
+          "0.24362",
+          "20577013.8",
+          1752822900000,
+          "5040454.47169"
+        ]
+      },
+      "BNBUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752822000000,
+          "745.37",
+          "747.15",
+          "743.61",
+          "743.93",
+          "2163.7485",
+          1752822900000,
+          "1613824.18"
+        ]
+      },
+      "SOLUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752822000000,
+          "183.49",
+          "184.21",
+          "183.05",
+          "183.16",
+          "14004.11",
+          1752822900000,
+          "2572306.42"
+        ]
+      },
+      "XRPUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752822000000,
+          "3.5648",
+          "3.5697",
+          "3.5304",
+          "3.5312",
+          "1280497.21",
+          1752822900000,
+          "4544337.4218"
+        ]
+      },
+      "AVAXUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752822000000,
+          "24.73",
+          "24.86",
+          "24.7",
+          "24.74",
+          "33814.1",
+          1752822900000,
+          "837593.92"
+        ]
+      },
+      "LINKUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752822000000,
+          "18.9",
+          "19.01",
+          "18.82",
+          "18.82",
+          "55348.21",
+          1752822900000,
+          "1047479.99"
+        ]
+      }
+    },
+    "30m": {
+      "BTCUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752818400000,
+          "120589.94",
+          "120809.84",
+          "120151.95",
+          "120151.96",
+          "97.07729649",
+          1752820200000,
+          "11690626.93"
+        ]
+      },
+      "ETHUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752818400000,
+          "3669.9",
+          "3669.91",
+          "3640.01",
+          "3645.3",
+          "5509.3881",
+          1752820200000,
+          "20105375.63"
+        ]
+      },
+      "ADAUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752818400000,
+          "0.8779",
+          "0.8794",
+          "0.8603",
+          "0.8622",
+          "6851633.37",
+          1752820200000,
+          "5951172.1021"
+        ]
+      },
+      "DOGEUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752818400000,
+          "0.2445",
+          "0.24506",
+          "0.24088",
+          "0.24263",
+          "43386396.7",
+          1752820200000,
+          "10530291.42815"
+        ]
+      },
+      "BNBUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752818400000,
+          "747.79",
+          "748.42",
+          "744.59",
+          "745.67",
+          "5668.6044",
+          1752820200000,
+          "4231959.08"
+        ]
+      },
+      "SOLUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752818400000,
+          "183.62",
+          "183.84",
+          "182.27",
+          "182.72",
+          "26947.94",
+          1752820200000,
+          "4931099.01"
+        ]
+      },
+      "XRPUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752818400000,
+          "3.6176",
+          "3.6186",
+          "3.5332",
+          "3.5433",
+          "2687037.06",
+          1752820200000,
+          "9599458.7393"
+        ]
+      },
+      "AVAXUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752818400000,
+          "24.97",
+          "24.97",
+          "24.53",
+          "24.59",
+          "72671.37",
+          1752820200000,
+          "1792341.13"
+        ]
+      },
+      "LINKUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752818400000,
+          "19.1",
+          "19.11",
+          "18.82",
+          "18.84",
+          "121975.64",
+          1752820200000,
+          "2310656.17"
+        ]
+      }
+    },
+    "60m": {
+      "BTCUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752811200000,
+          "120223.08",
+          "120486.29",
+          "119750",
+          "120403.39",
+          "101.99959555",
+          1752814800000,
+          "12253697.94"
+        ]
+      },
+      "ETHUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752811200000,
+          "3596.39",
+          "3621",
+          "3576.69",
+          "3619.4",
+          "7224.42568",
+          1752814800000,
+          "25988565.15"
+        ]
+      },
+      "ADAUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752811200000,
+          "0.8599",
+          "0.8683",
+          "0.8521",
+          "0.8614",
+          "7512815.07",
+          1752814800000,
+          "6466655.8692"
+        ]
+      },
+      "DOGEUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752811200000,
+          "0.23643",
+          "0.23768",
+          "0.23352",
+          "0.23576",
+          "45513384.4",
+          1752814800000,
+          "10720030.09427"
+        ]
+      },
+      "BNBUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752811200000,
+          "736.43",
+          "743.81",
+          "733.55",
+          "743.55",
+          "11817.0528",
+          1752814800000,
+          "8730829.52"
+        ]
+      },
+      "SOLUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752811200000,
+          "180.8",
+          "181.94",
+          "179.86",
+          "181.85",
+          "43979.19",
+          1752814800000,
+          "7968441.62"
+        ]
+      },
+      "XRPUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752811200000,
+          "3.6056",
+          "3.6107",
+          "3.5747",
+          "3.5912",
+          "4507021.66",
+          1752814800000,
+          "16197312.8762"
+        ]
+      },
+      "AVAXUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752811200000,
+          "24.33",
+          "24.57",
+          "24.22",
+          "24.55",
+          "77092.14",
+          1752814800000,
+          "1880560.6"
+        ]
+      },
+      "LINKUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752811200000,
+          "18.75",
+          "18.92",
+          "18.63",
+          "18.91",
+          "197030.96",
+          1752814800000,
+          "3698875.71"
+        ]
+      }
+    },
+    "4h": {
+      "BTCUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752768000000,
+          "118862.01",
+          "119880.13",
+          "118333.6",
+          "118945.05",
+          "441.45870084",
+          1752782400000,
+          "52610242.42"
+        ]
+      },
+      "ETHUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752768000000,
+          "3420.49",
+          "3454.99",
+          "3366",
+          "3412.33",
+          "25211.14824",
+          1752782400000,
+          "86100374.71"
+        ]
+      },
+      "ADAUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752768000000,
+          "0.8027",
+          "0.8168",
+          "0.7854",
+          "0.7992",
+          "24829190.14",
+          1752782400000,
+          "19879821.494"
+        ]
+      },
+      "DOGEUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752768000000,
+          "0.21386",
+          "0.21573",
+          "0.20784",
+          "0.21143",
+          "124566148.6",
+          1752782400000,
+          "26495570.15157"
+        ]
+      },
+      "BNBUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752768000000,
+          "721.36",
+          "722.04",
+          "713.71",
+          "715.54",
+          "23917.8311",
+          1752782400000,
+          "17153386.39"
+        ]
+      },
+      "SOLUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752768000000,
+          "174.16",
+          "175.42",
+          "171.22",
+          "173.04",
+          "146124.51",
+          1752782400000,
+          "25362090.76"
+        ]
+      },
+      "XRPUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752768000000,
+          "3.2541",
+          "3.3984",
+          "3.22",
+          "3.3055",
+          "24202462.12",
+          1752782400000,
+          "80202109.3342"
+        ]
+      },
+      "AVAXUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752768000000,
+          "22.73",
+          "22.95",
+          "22.3",
+          "22.42",
+          "340686.64",
+          1752782400000,
+          "7696948.5"
+        ]
+      },
+      "LINKUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752768000000,
+          "17.15",
+          "17.33",
+          "16.77",
+          "17.06",
+          "466218.92",
+          1752782400000,
+          "7948408.77"
+        ]
+      }
+    },
+    "1d": {
+      "BTCUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752451200000,
+          "119086.64",
+          "123217.99",
+          "118905.18",
+          "119841.17",
+          "4267.48522984",
+          1752537600000,
+          "515869382.21"
+        ]
+      },
+      "ETHUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752451200000,
+          "2972.03",
+          "3082.99",
+          "2962.82",
+          "3013.61",
+          "156856.98632",
+          1752537600000,
+          "474745416.35"
+        ]
+      },
+      "ADAUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752451200000,
+          "0.7368",
+          "0.7679",
+          "0.7212",
+          "0.7352",
+          "128662024.11",
+          1752537600000,
+          "96359729.4518"
+        ]
+      },
+      "DOGEUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752451200000,
+          "0.19855",
+          "0.21081",
+          "0.19464",
+          "0.19748",
+          "758200745.46",
+          1752537600000,
+          "154359528.00365"
+        ]
+      },
+      "BNBUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752451200000,
+          "692",
+          "707.49",
+          "686.05",
+          "689.13",
+          "123092.9557",
+          1752537600000,
+          "85975375.48"
+        ]
+      },
+      "SOLUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752451200000,
+          "161.15",
+          "168.64",
+          "160.62",
+          "162.21",
+          "1707968.23",
+          1752537600000,
+          "282732914.26"
+        ]
+      },
+      "XRPUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752451200000,
+          "2.8361",
+          "3.0336",
+          "2.8206",
+          "2.9576",
+          "85305402.95",
+          1752537600000,
+          "251652616.0916"
+        ]
+      },
+      "AVAXUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752451200000,
+          "21.21",
+          "22.08",
+          "21.02",
+          "21.26",
+          "1533379.65",
+          1752537600000,
+          "33174105.92"
+        ]
+      },
+      "LINKUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752451200000,
+          "15.65",
+          "16.47",
+          "15.57",
+          "15.75",
+          "2475606.11",
+          1752537600000,
+          "39678377.69"
+        ]
+      }
+    },
+    "1w": {
+      "BTCUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "ETHUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "ADAUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "DOGEUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "BNBUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "SOLUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "XRPUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "AVAXUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "LINKUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      }
+    },
+    "1W": {
+      "BTCUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1750032000000,
+          "105594.01",
+          "108950",
+          "98200.01",
+          "100963.87",
+          "35317.31897437",
+          1750636800000,
+          "3676579404.87"
+        ]
+      },
+      "ETHUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1750032000000,
+          "2547.61",
+          "2680.19",
+          "2112.78",
+          "2227.7",
+          "1215996.88988",
+          1750636800000,
+          "2999196036.38"
+        ]
+      },
+      "ADAUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1750032000000,
+          "0.6332",
+          "0.6576",
+          "0.5101",
+          "0.5417",
+          "474943641.95",
+          1750636800000,
+          "275331642.547"
+        ]
+      },
+      "DOGEUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1750032000000,
+          "0.17553",
+          "0.18115",
+          "0.14277",
+          "0.15129",
+          "3212482064.86",
+          1750636800000,
+          "525985016.20549"
+        ]
+      },
+      "BNBUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1750032000000,
+          "648.19",
+          "659.44",
+          "601.44",
+          "615.8",
+          "481652.743",
+          1750636800000,
+          "307524091.62"
+        ]
+      },
+      "SOLUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1750032000000,
+          "152.96",
+          "158.78",
+          "126.01",
+          "131.71",
+          "9709458.17",
+          1750636800000,
+          "1397107573.78"
+        ]
+      },
+      "XRPUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1750032000000,
+          "2.1654",
+          "2.3368",
+          "1.9081",
+          "2.0178",
+          "445203808.13",
+          1750636800000,
+          "950687314.7495"
+        ]
+      },
+      "AVAXUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1750032000000,
+          "19.11",
+          "19.99",
+          "15.61",
+          "16.52",
+          "8695166.89",
+          1750636800000,
+          "153835820.96"
+        ]
+      },
+      "LINKUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1750032000000,
+          "13.3",
+          "14.17",
+          "10.93",
+          "11.66",
+          "11795697.58",
+          1750636800000,
+          "148650147.57"
+        ]
+      }
+    },
+    "1M": {
+      "BTCUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1740787200000,
+          "84349.94",
+          "94999.99",
+          "76621.94",
+          "82550.01",
+          "151487.79003213",
+          1743379200000,
+          "12982691118.87"
+        ]
+      },
+      "ETHUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1740787200000,
+          "2237.49",
+          "2550.19",
+          "1755",
+          "1822.43",
+          "3860722.28284",
+          1743379200000,
+          "8058292273.4"
+        ]
+      },
+      "ADAUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1740787200000,
+          "0.6328",
+          "1.1743",
+          "0.6253",
+          "0.6617",
+          "1779108564.28",
+          1743379200000,
+          "1416294402.2979"
+        ]
+      },
+      "DOGEUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1740787200000,
+          "0.20184",
+          "0.24218",
+          "0.14291",
+          "0.16666",
+          "8701747995.45",
+          1743379200000,
+          "1586508014.37076"
+        ]
+      },
+      "BNBUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1740787200000,
+          "587.97",
+          "644.87",
+          "507.15",
+          "604.81",
+          "680943.2388",
+          1743379200000,
+          "409570652.03"
+        ]
+      },
+      "SOLUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1740787200000,
+          "148.15",
+          "179.74",
+          "112.04",
+          "124.53",
+          "18029429.68",
+          1743379200000,
+          "2428358156.14"
+        ]
+      },
+      "XRPUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1740787200000,
+          "2.1451",
+          "3",
+          "1.9004",
+          "2.0895",
+          "1460974201.8",
+          1743379200000,
+          "3433340106.5738"
+        ]
+      },
+      "AVAXUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1740787200000,
+          "22.38",
+          "25.11",
+          "15.27",
+          "18.79",
+          "49058515.41",
+          1743379200000,
+          "981387458.96"
+        ]
+      },
+      "LINKUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1740787200000,
+          "14.81",
+          "17.67",
+          "11.85",
+          "13.51",
+          "66857968",
+          1743379200000,
+          "988006041.35"
+        ]
+      }
+    },
+    "1h": {
+      "BTCUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "ETHUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "ADAUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "DOGEUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "BNBUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "SOLUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "XRPUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "AVAXUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "LINKUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      }
+    },
+    "1H": {
+      "BTCUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "ETHUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "ADAUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "DOGEUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "BNBUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "SOLUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "XRPUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "AVAXUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "LINKUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      }
+    },
+    "4H": {
+      "BTCUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "ETHUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "ADAUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "DOGEUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "BNBUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "SOLUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "XRPUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "AVAXUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "LINKUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      }
+    },
+    "1D": {
+      "BTCUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "ETHUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "ADAUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "DOGEUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "BNBUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "SOLUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "XRPUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "AVAXUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "LINKUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      }
+    },
+    "3m": {
+      "BTCUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "ETHUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "ADAUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "DOGEUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "BNBUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "SOLUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "XRPUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "AVAXUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "LINKUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      }
+    },
+    "2h": {
+      "BTCUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "ETHUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "ADAUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "DOGEUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "BNBUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "SOLUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "XRPUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "AVAXUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "LINKUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      }
+    },
+    "6h": {
+      "BTCUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "ETHUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "ADAUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "DOGEUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "BNBUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "SOLUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "XRPUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "AVAXUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "LINKUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      }
+    },
+    "8h": {
+      "BTCUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752710400000,
+          "118630.43",
+          "119158.27",
+          "117683.73",
+          "118311.75",
+          "1435.76743703",
+          1752739200000,
+          "169908176.57"
+        ]
+      },
+      "ETHUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752710400000,
+          "3371.34",
+          "3467.99",
+          "3310.94",
+          "3447.9",
+          "55239.04013",
+          1752739200000,
+          "186675864.03"
+        ]
+      },
+      "ADAUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752710400000,
+          "0.7643",
+          "0.7793",
+          "0.7402",
+          "0.7734",
+          "34816776.01",
+          1752739200000,
+          "26495659.3048"
+        ]
+      },
+      "DOGEUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752710400000,
+          "0.21269",
+          "0.21778",
+          "0.20662",
+          "0.21205",
+          "263883737.18",
+          1752739200000,
+          "55926036.48016"
+        ]
+      },
+      "BNBUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752710400000,
+          "708.6",
+          "724.64",
+          "707.1",
+          "720.92",
+          "70234.0117",
+          1752739200000,
+          "50256308.71"
+        ]
+      },
+      "SOLUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752710400000,
+          "173.62",
+          "174.86",
+          "168.7",
+          "174.02",
+          "327465.03",
+          1752739200000,
+          "56284073.6"
+        ]
+      },
+      "XRPUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752710400000,
+          "3.0374",
+          "3.1727",
+          "2.9877",
+          "3.1563",
+          "28192872.02",
+          1752739200000,
+          "87191707.2648"
+        ]
+      },
+      "AVAXUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752710400000,
+          "22.66",
+          "22.94",
+          "22.02",
+          "22.69",
+          "492025.02",
+          1752739200000,
+          "11047466.47"
+        ]
+      },
+      "LINKUSDT": {
+        "status": "SUCCESS",
+        "data_length": 5,
+        "first_row": [
+          1752710400000,
+          "16.68",
+          "17.01",
+          "16.32",
+          "16.99",
+          "713919.04",
+          1752739200000,
+          "11909470.99"
+        ]
+      }
+    },
+    "12h": {
+      "BTCUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "ETHUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "ADAUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "DOGEUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "BNBUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "SOLUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "XRPUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "AVAXUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "LINKUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      }
+    },
+    "3d": {
+      "BTCUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "ETHUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "ADAUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "DOGEUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "BNBUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "SOLUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "XRPUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "AVAXUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      },
+      "LINKUSDT": {
+        "status": "ERROR",
+        "http_status": 400,
+        "error": {
+          "msg": "Invalid interval.",
+          "code": -1121,
+          "_extend": null
+        }
+      }
+    }
+  },
+  "summary": {
+    "total_intervals_tested": 20,
+    "working_intervals_count": 10,
+    "total_pairs_tested": 9,
+    "working_pairs_count": 9
+  }
+}

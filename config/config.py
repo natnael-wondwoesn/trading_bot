@@ -58,7 +58,7 @@ class Config:
     # Data Feed Settings
     WEBSOCKET_RECONNECT_DELAY = 5
     KLINE_INTERVAL = "1m"  # For real-time updates
-    SIGNAL_CHECK_INTERVAL = 60  # Check for signals every 60 seconds
+    SIGNAL_CHECK_INTERVAL = 300  # Check for signals every 5 minutes (300 seconds)
 
     # Logging
     LOG_LEVEL = "INFO"

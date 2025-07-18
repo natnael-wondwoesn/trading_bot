@@ -55,21 +55,20 @@ class EnhancedRSIEMAStrategy(Strategy):
 
         return self.indicators
 
-    
     def boost_confidence(self, base_confidence: float, signal_strength: dict) -> float:
         """Boost confidence based on multiple factors"""
         boosted = base_confidence
-        
+
         # Boost for multiple signal confirmations
         if len(signal_strength.get("reasons", [])) >= 3:
             boosted *= 1.3
         elif len(signal_strength.get("reasons", [])) >= 2:
             boosted *= 1.2
-            
+
         # Boost for strong momentum
         if "Strong RSI signal" in signal_strength.get("reasons", []):
             boosted *= 1.2
-            
+
         # Cap at 95% to maintain realism
         return min(boosted, 0.95)
 
@@ -165,10 +164,14 @@ class EnhancedRSIEMAStrategy(Strategy):
 
         if buy_confidence >= min_confidence and buy_confidence > sell_confidence:
             action = "BUY"
-            confidence = self.boost_confidence(buy_confidence, signal_strength)  # Scale up confidence
+            confidence = self.boost_confidence(
+                buy_confidence, signal_strength
+            )  # Scale up confidence
         elif sell_confidence >= min_confidence and sell_confidence > buy_confidence:
             action = "SELL"
-            confidence = self.boost_confidence(sell_confidence, signal_strength)  # Scale up confidence
+            confidence = self.boost_confidence(
+                sell_confidence, signal_strength
+            )  # Scale up confidence
         else:
             action = "HOLD"
             confidence = 0

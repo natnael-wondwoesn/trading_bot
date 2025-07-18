@@ -42,7 +42,7 @@ class ProductionTradingService:
         self.services = {}
         self.running = False
         self.startup_time = None
-        
+
         self.config = {
             "telegram_bot_token": os.getenv("TELEGRAM_BOT_TOKEN"),
             "webhook_url": os.getenv("WEBHOOK_URL"),
@@ -59,68 +59,83 @@ class ProductionTradingService:
         self.app = FastAPI(
             title="Trading Service API",
             description="Multi-User Trading Service",
-            version="1.0.0"
+            version="1.0.0",
         )
-        
+
         self.setup_routes()
 
     def setup_routes(self):
         """Setup API routes"""
-        
+
         @self.app.get("/health")
         async def health_check():
             """Health check endpoint"""
-            return JSONResponse(content={
-                "status": "healthy",
-                "timestamp": datetime.now().isoformat(),
-                "uptime": str(datetime.now() - self.startup_time) if self.startup_time else "0",
-                "services": {
-                    "database": "online",
-                    "bot": "online" if "bot" in self.services else "offline",
-                    "signal_service": "online" if "signal_service" in self.services else "offline"
+            return JSONResponse(
+                content={
+                    "status": "healthy",
+                    "timestamp": datetime.now().isoformat(),
+                    "uptime": (
+                        str(datetime.now() - self.startup_time)
+                        if self.startup_time
+                        else "0"
+                    ),
+                    "services": {
+                        "database": "online",
+                        "bot": "online" if "bot" in self.services else "offline",
+                        "signal_service": (
+                            "online" if "signal_service" in self.services else "offline"
+                        ),
+                    },
                 }
-            })
-        
+            )
+
         @self.app.get("/signals/status")
         async def get_signal_status():
             """Get signal service status"""
             try:
                 if "signal_service" in self.services:
                     service = self.services["signal_service"]
-                    return JSONResponse(content={
-                        "running": getattr(service, 'running', False),
-                        "strategy": service.strategy.name if service.strategy else None,
-                        "trading_pairs": len(getattr(service, 'trading_pairs', [])),
-                        "callbacks": len(getattr(service, 'signal_callbacks', [])),
-                        "timestamp": datetime.now().isoformat()
-                    })
+                    return JSONResponse(
+                        content={
+                            "running": getattr(service, "running", False),
+                            "strategy": (
+                                service.strategy.name if service.strategy else None
+                            ),
+                            "trading_pairs": len(getattr(service, "trading_pairs", [])),
+                            "callbacks": len(getattr(service, "signal_callbacks", [])),
+                            "timestamp": datetime.now().isoformat(),
+                        }
+                    )
                 else:
-                    return JSONResponse(content={
-                        "running": False,
-                        "error": "Signal service not initialized",
-                        "timestamp": datetime.now().isoformat()
-                    })
+                    return JSONResponse(
+                        content={
+                            "running": False,
+                            "error": "Signal service not initialized",
+                            "timestamp": datetime.now().isoformat(),
+                        }
+                    )
             except Exception as e:
                 return JSONResponse(status_code=500, content={"error": str(e)})
-        
+
         @self.app.post("/signals/force-scan")
         async def force_signal_scan():
             """Force a signal scan for testing"""
             try:
                 if "signal_service" in self.services:
                     service = self.services["signal_service"]
-                    if hasattr(service, 'force_scan'):
+                    if hasattr(service, "force_scan"):
                         signals = await service.force_scan()
-                        return JSONResponse(content={
-                            "success": True,
-                            "signals_found": len(signals),
-                            "signals": signals,
-                            "timestamp": datetime.now().isoformat()
-                        })
-                return JSONResponse(content={
-                    "success": False,
-                    "error": "Signal service not available"
-                })
+                        return JSONResponse(
+                            content={
+                                "success": True,
+                                "signals_found": len(signals),
+                                "signals": signals,
+                                "timestamp": datetime.now().isoformat(),
+                            }
+                        )
+                return JSONResponse(
+                    content={"success": False, "error": "Signal service not available"}
+                )
             except Exception as e:
                 return JSONResponse(status_code=500, content={"error": str(e)})
 
@@ -161,25 +176,95 @@ class ProductionTradingService:
             logger.info("Step 7: Starting integrated signal service...")
             try:
                 await integrated_signal_service.initialize()
-                
+
                 # Add signal notification callback
                 async def signal_notification_callback(signals):
                     if signals and "bot" in self.services:
                         try:
                             bot = self.services["bot"]
-                            if hasattr(bot, 'notify_all_users_of_signals'):
-                                await bot.notify_all_users_of_signals(signals)
+                            active_user_count = len(bot.active_users)
+
+                            if active_user_count == 0:
+                                logger.warning(
+                                    "🚨 NO ACTIVE USERS - Signals detected but no users to send to!"
+                                )
+                                logger.info(
+                                    "💡 Users need to start your bot with /start to receive signals"
+                                )
+                                logger.info(
+                                    "📱 Share your bot link: t.me/your_bot_username"
+                                )
+                                return  # No point broadcasting to 0 users
+
+                            logger.info(
+                                f"Broadcasting {len(signals)} signals to {active_user_count} active users"
+                            )
+
+                            # Send each signal to all active users using the correct broadcast method
+                            total_sent = 0
+                            for signal in signals:
+                                # Log original signal for debugging
+                                logger.debug(
+                                    f"Processing signal for broadcast: {signal}"
+                                )
+
+                                # Convert signal dict to format expected by broadcast method
+                                original_confidence = signal.get("confidence", 0)
+                                # Ensure confidence is in percentage (0-100)
+                                if original_confidence <= 1:
+                                    confidence_percent = original_confidence * 100
+                                else:
+                                    confidence_percent = original_confidence
+
+                                signal_data = {
+                                    "symbol": signal.get(
+                                        "pair", signal.get("symbol", "UNKNOWN")
+                                    ),
+                                    "action": signal.get("action", "HOLD"),
+                                    "price": signal.get("price", 0),
+                                    "confidence": confidence_percent,
+                                    "stop_loss": signal.get("stop_loss"),
+                                    "take_profit": signal.get("take_profit"),
+                                    "timestamp": signal.get(
+                                        "timestamp", datetime.now()
+                                    ),
+                                }
+
+                                logger.debug(f"Converted signal data: {signal_data}")
+
+                                # Use the correct broadcast method
+                                try:
+                                    sent_count = (
+                                        await bot.broadcast_signal_to_all_users(
+                                            signal_data
+                                        )
+                                    )
+                                    total_sent += sent_count
+                                    logger.info(
+                                        f"📊 {signal_data['symbol']} {signal_data['action']} signal sent to {sent_count} users"
+                                    )
+                                except Exception as broadcast_error:
+                                    logger.error(
+                                        f"Error broadcasting signal {signal_data['symbol']}: {broadcast_error}"
+                                    )
+
+                            logger.info(
+                                f"🎯 Total broadcast complete: {total_sent} messages sent across {len(signals)} signals"
+                            )
+
                         except Exception as e:
-                            logger.error(f"Error notifying users of signals: {e}")
-                
-                integrated_signal_service.add_signal_callback(signal_notification_callback)
-                
+                            logger.error(f"Error broadcasting signals to users: {e}")
+
+                integrated_signal_service.add_signal_callback(
+                    signal_notification_callback
+                )
+
                 # Start monitoring in background
                 asyncio.create_task(integrated_signal_service.start_monitoring())
                 self.services["signal_service"] = integrated_signal_service
-                
+
                 logger.info("Integrated signal service started successfully")
-                
+
             except Exception as e:
                 logger.error(f"Failed to start integrated signal service: {e}")
                 logger.warning("Continuing without integrated signal service...")
@@ -277,6 +362,7 @@ async def main():
     except Exception as e:
         logger.error(f"Fatal error in main: {e}")
         import traceback
+
         traceback.print_exc()
     finally:
         if service:
@@ -291,5 +377,5 @@ async def main():
 if __name__ == "__main__":
     if sys.platform.startswith("win"):
         asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
-    
+
     asyncio.run(main())
